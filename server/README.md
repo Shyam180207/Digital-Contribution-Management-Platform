@@ -47,6 +47,8 @@ of falling back to in-memory or demo data.
 - `POST /api/groups/:groupId/transactions` records a contribution or payout
   for a member of an owned group. Amounts use integer minor currency units
   (for example, `1250` represents 12.50).
+- `PUT /api/groups/:groupId/transactions/:transactionId` replaces a
+  transaction's member, kind, amount, and note within an owned group.
 
 JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
 
