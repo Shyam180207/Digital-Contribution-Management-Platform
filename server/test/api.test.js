@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
@@ -20,11 +21,13 @@ function createTestUserModel() {
       users.set(user.username, user)
       return user
     },
-    findOne({ username }) {
+    findOne(query) {
       return {
         select() {
           return {
-            lean: async () => users.get(username) ?? null,
+            lean: async () => query.username
+              ? users.get(query.username) ?? null
+              : [...users.values()].find((user) => user.googleSub === query.googleSub) ?? null,
           }
         },
       }
@@ -93,8 +96,9 @@ function createTestApp(overrides = {}) {
   }
   const app = createApp({
     dataStore,
-    UserModel: createTestUserModel(),
+    UserModel: overrides.UserModel ?? createTestUserModel(),
     jwtSecret: 'test-secret-with-more-than-thirty-two-characters',
+    ...overrides.appOptions,
   })
 
   return { app, calls }
@@ -231,6 +235,135 @@ test('CSRF protection requires the header to match the readable cookie', async (
     .set('X-CSRF-Token', 'different-token')
     .send({ username: 'csrf_mismatch', password: 'a-secure-test-password' })
     .expect(403)
+})
+
+test('Google OAuth creates an account and authenticates it with a JWT cookie', async () => {
+  const oauthCalls = []
+  const googleOAuthClient = {
+    generateAuthUrl(options) {
+      oauthCalls.push(['generateAuthUrl', options])
+      return 'https://accounts.google.com/o/oauth2/v2/auth'
+    },
+    async getToken(code) {
+      oauthCalls.push(['getToken', code])
+      return { tokens: { id_token: 'verified-google-id-token' } }
+    },
+    async verifyIdToken(options) {
+      oauthCalls.push(['verifyIdToken', options])
+      return {
+        getPayload: () => ({
+          sub: 'google-subject-123',
+          email: 'person@example.com',
+          email_verified: true,
+        }),
+      }
+    },
+  }
+  const { app } = createTestApp({
+    appOptions: {
+      googleClientId: 'test-google-client-id',
+      googleOAuthClient,
+    },
+  })
+  const agent = request.agent(app)
+  const start = await agent.get('/api/auth/google').expect(302)
+  const stateCookie = start.headers['set-cookie'].find((cookie) => cookie.startsWith('commonfund.google-state='))
+  const state = stateCookie.split(';', 1)[0].split('=').slice(1).join('=')
+  const authOptions = oauthCalls[0][1]
+
+  assert.equal(start.headers.location, 'https://accounts.google.com/o/oauth2/v2/auth')
+  assert.equal(authOptions.state, state)
+  assert.deepEqual(authOptions.scope, ['openid', 'email', 'profile'])
+  assert.ok(stateCookie.includes('HttpOnly'))
+  assert.ok(stateCookie.includes('SameSite=Lax'))
+
+  const callback = await agent
+    .get('/api/auth/google/callback')
+    .query({ code: 'google-auth-code', state })
+    .redirects(0)
+    .expect(303)
+  const login = await agent.get('/api/auth/session').expect(200)
+  const expectedUsername = `google_${createHash('sha256')
+    .update('google-subject-123')
+    .digest('hex')
+    .slice(0, 24)}`
+
+  assert.equal(callback.headers.location, '/')
+  assert.equal(login.body.user.username, expectedUsername)
+  assert.ok(callback.headers['set-cookie'].some((cookie) => (
+    cookie.startsWith('commonfund.token=') && cookie.includes('HttpOnly')
+  )))
+  assert.deepEqual(oauthCalls.slice(1), [
+    ['getToken', 'google-auth-code'],
+    ['verifyIdToken', { idToken: 'verified-google-id-token', audience: 'test-google-client-id' }],
+  ])
+})
+
+test('Google OAuth rejects a callback with an invalid state', async () => {
+  const { app } = createTestApp({
+    appOptions: {
+      googleClientId: 'test-google-client-id',
+      googleOAuthClient: {
+        generateAuthUrl: () => 'https://accounts.google.com/o/oauth2/v2/auth',
+      },
+    },
+  })
+  const agent = request.agent(app)
+  await agent.get('/api/auth/google').expect(302)
+  const response = await agent
+    .get('/api/auth/google/callback')
+    .query({ code: 'google-auth-code', state: 'attacker-controlled-state' })
+    .redirects(0)
+    .expect(303)
+
+  assert.equal(response.headers.location, '/?oauthError=state')
+  assert.ok(response.headers['set-cookie'].some((cookie) => (
+    cookie.startsWith('commonfund.google-state=;')
+  )))
+})
+
+test('Google OAuth rejects identities without a verified email', async () => {
+  const googleOAuthClient = {
+    generateAuthUrl: () => 'https://accounts.google.com/o/oauth2/v2/auth',
+    async getToken() {
+      return { tokens: { id_token: 'unverified-google-id-token' } }
+    },
+    async verifyIdToken() {
+      return {
+        getPayload: () => ({
+          sub: 'unverified-google-subject',
+          email_verified: false,
+        }),
+      }
+    },
+  }
+  const { app } = createTestApp({
+    appOptions: {
+      googleClientId: 'test-google-client-id',
+      googleOAuthClient,
+    },
+  })
+  const agent = request.agent(app)
+  const start = await agent.get('/api/auth/google').expect(302)
+  const stateCookie = start.headers['set-cookie'].find((cookie) => cookie.startsWith('commonfund.google-state='))
+  const state = stateCookie.split(';', 1)[0].split('=').slice(1).join('=')
+  const callback = await agent
+    .get('/api/auth/google/callback')
+    .query({ code: 'google-auth-code', state })
+    .redirects(0)
+    .expect(303)
+  const session = await agent.get('/api/auth/session').expect(200)
+
+  assert.equal(callback.headers.location, '/?oauthError=failed')
+  assert.equal(session.body.user, null)
+})
+
+test('Google OAuth is unavailable until provider credentials are configured', async () => {
+  const { app } = createTestApp()
+
+  await request(app)
+    .get('/api/auth/google')
+    .expect(503, { error: 'Google sign-in is not configured.' })
 })
 
 test('authentication rejects passwords longer than the supported maximum', async () => {

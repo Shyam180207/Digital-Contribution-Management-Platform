@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
 
-function AuthPage({ onAuthenticate }) {
+function AuthPage({ initialError = '', onAuthenticate }) {
   const [mode, setMode] = useState('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isRegister = mode === 'register'
 
@@ -41,6 +41,11 @@ function AuthPage({ onAuthenticate }) {
           {isRegister ? 'Start organizing contributions with your community.' : 'Sign in to your community workspace.'}
         </p>
         {error && <p className="form-error" role="alert">{error}</p>}
+        <a className="button button-google" href="/api/auth/google">
+          <span aria-hidden="true" className="google-mark">G</span>
+          Continue with Google
+        </a>
+        <div aria-hidden="true" className="auth-divider"><span>or</span></div>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label htmlFor="username">Username</label>
           <input

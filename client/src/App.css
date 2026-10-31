@@ -1232,6 +1232,49 @@
   font-size: 11px;
 }
 
+.button-google {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid #e8e7ef;
+  border-radius: 7px;
+  color: #4a495c;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.button-google:hover {
+  background: #fafaff;
+}
+
+.google-mark {
+  color: #4285f4;
+  font-family: Arial, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 8px;
+  color: #9291a1;
+  font-size: 10px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  height: 1px;
+  flex: 1;
+  background: #eeedf3;
+  content: '';
+}
+
 .auth-form {
   display: grid;
   gap: 8px;
