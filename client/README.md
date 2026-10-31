@@ -1,15 +1,20 @@
 # CommonFund client
 
 The React frontend for CommonFund, a community contribution management
-platform. The dashboard includes contribution summaries, savings groups,
-members, and recent activity using local demonstration data.
+platform. The dashboard reads account data from the authenticated Express API.
 
 ## Run locally
+
+Start MongoDB and the API first; see [`../server/README.md`](../server/README.md).
+Then run:
 
 ```sh
 npm install
 npm run dev
 ```
+
+The Vite development server proxies API requests to the local Express server.
+Register an account to create groups and view account-scoped data.
 
 ## Available scripts
 

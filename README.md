@@ -5,6 +5,15 @@ groups and cooperatives. It replaces scattered paper records with an organized
 record of groups, members, contributions, and payouts so that members can track
 their shared finances and reduce misunderstandings.
 
+## Run the React app and API
+
+The React client uses the Express API, which stores accounts, groups, members,
+and transactions in MongoDB. Configure and start MongoDB and the API using
+[server/README.md](./server/README.md), then start the client using
+[client/README.md](./client/README.md). The API requires `MONGODB_URI` and a
+private `SESSION_SECRET`; copy `server/.env.example` to `server/.env` to
+configure them locally.
+
 ## Capstone plan
 
 ### Day 1: Define the product and data model

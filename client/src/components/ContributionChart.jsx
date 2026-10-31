@@ -1,53 +1,39 @@
-import { useState } from 'react'
-import { contributionSeries } from '../data/dashboard.js'
 import Icon from './Icon.jsx'
 
-function ContributionChart() {
-  const [period, setPeriod] = useState('Month')
-  const series = contributionSeries[period]
+function ContributionChart({ series }) {
+  const maximum = Math.max(1, ...series.values)
   const points = series.values.map((value, index) => {
-    const x = (index / (series.values.length - 1)) * 600
-    const y = 158 - value * 1.28
+    const x = (index / Math.max(1, series.values.length - 1)) * 600
+    const y = 158 - (value / maximum) * 132
     return [x, y]
   })
   const line = points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')
   const area = `${line} L 600 170 L 0 170 Z`
+  const total = series.values.reduce((sum, value) => sum + value, 0)
 
   return (
     <article className="panel chart-panel">
       <div className="panel-heading chart-heading">
         <div>
           <div className="panel-title-row">
-            <h2>Contribution overview</h2>
-            <button className="info-button" type="button" aria-label="Contribution overview information">i</button>
+            <h2>Contribution activity</h2>
+            <button className="info-button" type="button" aria-label="Contribution activity information">i</button>
           </div>
-          <p className="panel-description">Track how your community is growing</p>
+          <p className="panel-description">Daily contribution records from your groups</p>
         </div>
-        <div className="period-switch" aria-label="Chart time period">
-          {Object.keys(contributionSeries).map((range) => (
-            <button
-              aria-pressed={period === range}
-              className={period === range ? 'selected' : ''}
-              key={range}
-              onClick={() => setPeriod(range)}
-              type="button"
-            >
-              {range}
-            </button>
-          ))}
-        </div>
+        <span className="chart-period-label">Last 7 days</span>
       </div>
       <div className="chart-summary">
-        <strong>{series.total}</strong>
-        <span className="chart-change"><Icon name="arrowUpRight" size={14} />{series.change}</span>
-        <span className="chart-summary-label">collected this {period.toLowerCase()}</span>
+        <strong>{total.toLocaleString('en-IN')}</strong>
+        <span className="chart-change"><Icon name="arrowUpRight" size={14} />{series.values.at(-1) ?? 0}</span>
+        <span className="chart-summary-label">contributions this week</span>
       </div>
       <div className="chart-wrap">
         <div className="chart-y-labels" aria-hidden="true">
-          <span>₹ 30k</span><span>₹ 20k</span><span>₹ 10k</span><span>₹ 0</span>
+          <span>{maximum}</span><span>{Math.round(maximum * .67)}</span><span>{Math.round(maximum * .33)}</span><span>0</span>
         </div>
         <svg
-          aria-label={`${period} contribution trend chart`}
+          aria-label="Daily contribution records for the last seven days"
           className="contribution-chart"
           role="img"
           viewBox="0 0 600 180"
@@ -68,7 +54,7 @@ function ContributionChart() {
         </svg>
       </div>
       <div className="chart-x-labels">
-        {series.labels.map((label) => <span key={label}>{label}</span>)}
+        {series.labels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
       </div>
     </article>
   )

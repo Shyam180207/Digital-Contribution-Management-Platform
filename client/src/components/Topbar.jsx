@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Icon from './Icon.jsx'
 
-function Topbar({ search, onSearch, onCreateGroup }) {
+function Topbar({ search, onSearch, onCreateGroup, onLogout }) {
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -37,6 +37,9 @@ function Topbar({ search, onSearch, onCreateGroup }) {
       <div className="topbar-actions">
         <button className="mobile-create" onClick={onCreateGroup} type="button" aria-label="Create a group">
           <Icon name="plus" />
+        </button>
+        <button className="icon-button signout-action" onClick={onLogout} type="button" aria-label="Sign out">
+          <Icon name="logout" size={18} />
         </button>
         <button className="icon-button notification-button" type="button" aria-label="Notifications">
           <Icon name="bell" size={20} />
