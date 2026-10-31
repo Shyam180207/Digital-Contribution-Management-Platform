@@ -53,3 +53,18 @@ export function createGroup(name, currency, csrfToken) {
     csrfToken,
   })
 }
+
+export function updateTransaction(groupId, transactionId, transaction, csrfToken) {
+  return request(`/api/groups/${groupId}/transactions/${transactionId}`, {
+    method: 'PUT',
+    body: transaction,
+    csrfToken,
+  })
+}
+
+export function deleteTransaction(groupId, transactionId, csrfToken) {
+  return request(`/api/groups/${groupId}/transactions/${transactionId}`, {
+    method: 'DELETE',
+    csrfToken,
+  })
+}

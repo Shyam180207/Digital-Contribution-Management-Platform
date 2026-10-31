@@ -2,7 +2,7 @@ import Avatar from './Avatar.jsx'
 import Icon from './Icon.jsx'
 import { formatCurrency, formatRelativeTime } from '../data/dashboard.js'
 
-function ActivityFeed({ items, compact = false, onViewAll }) {
+function ActivityFeed({ items, compact = false, onViewAll, onEdit, onDelete }) {
   return (
     <article className={`panel activity-panel ${compact ? 'activity-compact' : ''}`}>
       <div className="panel-heading">
@@ -21,10 +21,30 @@ function ActivityFeed({ items, compact = false, onViewAll }) {
                 <p><strong>{item.name}</strong> {item.action}</p>
                 <span>{item.group} <i>·</i> {formatRelativeTime(item.createdAt)}</span>
               </div>
-                {item.amountMinor !== null && (
+              {item.amountMinor !== null && (
                 <strong className={`activity-amount ${item.kind === 'Payout' ? 'payout' : ''}`}>
-                    {item.kind === 'Payout' ? '−' : '+'}{formatCurrency(item.amountMinor, item.currency)}
+                  {item.kind === 'Payout' ? '−' : '+'}{formatCurrency(item.amountMinor, item.currency)}
                 </strong>
+              )}
+              {!compact && onEdit && onDelete && (
+                <div className="activity-actions">
+                  <button
+                    aria-label={`Edit ${item.kind.toLowerCase()} for ${item.name}`}
+                    className="row-action"
+                    onClick={() => onEdit(item)}
+                    type="button"
+                  >
+                    <Icon name="edit" size={16} />
+                  </button>
+                  <button
+                    aria-label={`Delete ${item.kind.toLowerCase()} for ${item.name}`}
+                    className="row-action row-action-danger"
+                    onClick={() => onDelete(item)}
+                    type="button"
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+                </div>
               )}
             </li>
           ))}

@@ -257,6 +257,17 @@ export function createApp({
     return res.json({ transaction })
   })
 
+  app.delete('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuthentication, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
+    if (!mongoose.isValidObjectId(req.params.transactionId)) throw new HttpError(400, 'Invalid transaction ID.')
+    await dataStore.deleteTransaction(
+      req.session.userId,
+      req.params.groupId,
+      req.params.transactionId,
+    )
+    return res.sendStatus(204)
+  })
+
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }))
 
   app.use((error, _req, res, _next) => {

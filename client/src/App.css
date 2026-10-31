@@ -814,6 +814,21 @@
   color: #d07a68;
 }
 
+.activity-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.row-action-danger {
+  color: #b75e55;
+}
+
+.row-action-danger:hover {
+  color: #913f37;
+  background: #fff1ef;
+}
+
 .text-button {
   display: inline-flex;
   align-items: center;
@@ -1105,6 +1120,14 @@
   color: #5d5c70;
   background: #fff;
   font-size: 11px;
+}
+
+.transaction-form select {
+  margin: 0 0 12px;
+}
+
+.transaction-form input {
+  margin-bottom: 12px;
 }
 
 .modal-card input::placeholder {

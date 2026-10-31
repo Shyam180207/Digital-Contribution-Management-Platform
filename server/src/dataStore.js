@@ -160,6 +160,7 @@ export function createDataStore({
           id: String(member._id),
           name: member.name,
           phone: member.phone,
+          groupId: member.group?._id ? String(member.group._id) : '',
           group: member.group?.name ?? 'Group unavailable',
           joined: member.createdAt,
           status: 'Active',
@@ -168,6 +169,9 @@ export function createDataStore({
         })),
         activities: transactionRows.map((transaction, index) => ({
           id: String(transaction._id),
+          groupId: transaction.group?._id ? String(transaction.group._id) : '',
+          memberId: transaction.member?._id ? String(transaction.member._id) : '',
+          note: transaction.note,
           name: transaction.member?.name ?? 'Unknown member',
           action: transaction.kind === 'payout' ? 'received a payout' : 'contributed',
           amountMinor: transaction.amountMinor,
@@ -279,6 +283,16 @@ export function createDataStore({
         note: transaction.note,
         createdAt: transaction.createdAt,
       }
+    },
+
+    async deleteTransaction(userId, groupId, transactionId) {
+      const group = await getOwnedGroup(userId, groupId)
+      const transaction = await TransactionModel.findOneAndDelete({
+        _id: transactionId,
+        group: group._id,
+      }).lean()
+      if (!transaction) throw new HttpError(404, 'Transaction not found in this group.')
+      return { id: String(transaction._id) }
     },
 
     async listGroupMembers(userId, groupId) {

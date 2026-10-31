@@ -49,6 +49,8 @@ of falling back to in-memory or demo data.
   (for example, `1250` represents 12.50).
 - `PUT /api/groups/:groupId/transactions/:transactionId` replaces a
   transaction's member, kind, amount, and note within an owned group.
+- `DELETE /api/groups/:groupId/transactions/:transactionId` deletes a
+  transaction only when it belongs to a group owned by the signed-in user.
 
 JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
 

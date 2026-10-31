@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   authenticate,
   createGroup as createGroupRequest,
+  deleteTransaction as deleteTransactionRequest,
   getDashboard,
   getSession,
   signOut,
+  updateTransaction as updateTransactionRequest,
 } from './api.js'
 import ActivityFeed from './components/ActivityFeed.jsx'
 import AuthPage from './components/AuthPage.jsx'
 import ContributionChart from './components/ContributionChart.jsx'
 import CreateGroupModal from './components/CreateGroupModal.jsx'
+import EditTransactionModal from './components/EditTransactionModal.jsx'
 import GroupsTable from './components/GroupsTable.jsx'
 import Icon from './components/Icon.jsx'
 import MembersTable from './components/MembersTable.jsx'
@@ -30,6 +33,7 @@ function App() {
   const [activePage, setActivePage] = useState('overview')
   const [search, setSearch] = useState('')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingActivity, setEditingActivity] = useState(null)
   const [notice, setNotice] = useState('')
   const [user, setUser] = useState(null)
   const [csrfToken, setCsrfToken] = useState('')
@@ -137,6 +141,30 @@ function App() {
     }
   }, [csrfToken, refreshDashboard])
 
+  const handleUpdateTransaction = useCallback(async (activity, transaction) => {
+    await updateTransactionRequest(activity.groupId, activity.id, transaction, csrfToken)
+    setEditingActivity(null)
+    setNotice('Transaction updated.')
+    try {
+      await refreshDashboard()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }, [csrfToken, refreshDashboard])
+
+  const handleDeleteTransaction = useCallback(async (activity) => {
+    const confirmed = window.confirm(`Delete this ${activity.kind.toLowerCase()} for ${activity.name}?`)
+    if (!confirmed) return
+
+    try {
+      await deleteTransactionRequest(activity.groupId, activity.id, csrfToken)
+      setNotice('Transaction deleted.')
+      await refreshDashboard()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }, [csrfToken, refreshDashboard])
+
   const stats = dashboard ? createStats(dashboard.summary) : []
   const [title, subtitle] = pageTitles[activePage]
 
@@ -227,13 +255,27 @@ function App() {
           )}
 
           {dashboard && activePage === 'members' && <MembersTable members={filteredMembers} />}
-          {dashboard && activePage === 'activity' && <ActivityFeed items={filteredActivities} />}
+          {dashboard && activePage === 'activity' && (
+            <ActivityFeed
+              items={filteredActivities}
+              onDelete={handleDeleteTransaction}
+              onEdit={setEditingActivity}
+            />
+          )}
         </div>
       </main>
       {isCreateOpen && (
         <CreateGroupModal
           onClose={() => setIsCreateOpen(false)}
           onCreate={handleCreateGroup}
+        />
+      )}
+      {editingActivity && (
+        <EditTransactionModal
+          members={(dashboard?.members ?? []).filter((member) => member.groupId === editingActivity.groupId)}
+          onClose={() => setEditingActivity(null)}
+          onSave={handleUpdateTransaction}
+          transaction={editingActivity}
         />
       )}
     </div>
