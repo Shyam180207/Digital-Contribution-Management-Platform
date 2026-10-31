@@ -5,6 +5,8 @@ function AuthPage({ onAuthenticate }) {
   const [mode, setMode] = useState('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isRegister = mode === 'register'
@@ -12,6 +14,11 @@ function AuthPage({ onAuthenticate }) {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    if (isRegister && password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       await onAuthenticate(mode, { username, password })
@@ -47,15 +54,42 @@ function AuthPage({ onAuthenticate }) {
             value={username}
           />
           <label htmlFor="password">Password</label>
-          <input
-            autoComplete={isRegister ? 'new-password' : 'current-password'}
-            id="password"
-            minLength={isRegister ? 10 : 1}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            type="password"
-            value={password}
-          />
+          <div className="auth-password-field">
+            <input
+              autoComplete={isRegister ? 'new-password' : 'current-password'}
+              id="password"
+              maxLength={128}
+              minLength={isRegister ? 10 : 1}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+            />
+            <button
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="password-visibility"
+              onClick={() => setShowPassword((visible) => !visible)}
+              type="button"
+            >
+              <Icon name={showPassword ? 'eyeOff' : 'eye'} size={17} />
+            </button>
+          </div>
+          {isRegister && (
+            <>
+              <p className="auth-password-hint">Use 10–128 characters for your password.</p>
+              <label htmlFor="confirm-password">Confirm password</label>
+              <input
+                autoComplete="new-password"
+                id="confirm-password"
+                maxLength={128}
+                minLength={10}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+              />
+            </>
+          )}
           <button className="button button-primary auth-submit" disabled={isSubmitting} type="submit">
             {isSubmitting ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
           </button>
@@ -67,6 +101,7 @@ function AuthPage({ onAuthenticate }) {
             onClick={() => {
               setMode(isRegister ? 'login' : 'register')
               setError('')
+              setConfirmPassword('')
             }}
             type="button"
           >

@@ -9,6 +9,7 @@ import User from '../models/User.js'
 
 const usernamePattern = /^[a-z0-9_.-]{3,40}$/
 const passwordMinimumLength = 10
+const passwordMaximumLength = 128
 
 function csrfMatches(expected, actual) {
   if (typeof expected !== 'string' || typeof actual !== 'string') return false
@@ -159,6 +160,7 @@ export function createApp({
 
     if (!usernamePattern.test(username)) throw new HttpError(400, 'Username must be 3-40 letters, numbers, dots, dashes, or underscores.')
     if (password.length < passwordMinimumLength) throw new HttpError(400, `Password must contain at least ${passwordMinimumLength} characters.`)
+    if (password.length > passwordMaximumLength) throw new HttpError(400, `Password must contain ${passwordMaximumLength} characters or fewer.`)
 
     const user = await UserModel.create({
       username,
@@ -173,6 +175,7 @@ export function createApp({
     const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : ''
     const password = typeof body.password === 'string' ? body.password : ''
     if (!username || !password) throw new HttpError(400, 'Enter your username and password.')
+    if (password.length > passwordMaximumLength) throw new HttpError(400, `Password must contain ${passwordMaximumLength} characters or fewer.`)
 
     const user = await UserModel.findOne({ username }).select('+passwordHash').lean()
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
