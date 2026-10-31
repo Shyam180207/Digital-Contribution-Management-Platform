@@ -85,6 +85,9 @@ function createTestApp(overrides = {}) {
       calls.push(['updateTransaction', userId, groupId, transactionId, transactionData])
       return { id: transactionId, group: groupId, ...transactionData }
     },
+    async deleteTransaction(userId, groupId, transactionId) {
+      calls.push(['deleteTransaction', userId, groupId, transactionId])
+    },
     ...overrides.dataStore,
   }
   const app = createApp({
@@ -120,6 +123,14 @@ test('protected dashboard reads require an authenticated session', async () => {
     .put('/api/groups/507f1f77bcf86cd799439011/transactions/507f1f77bcf86cd799439013')
     .set('X-CSRF-Token', csrfToken)
     .send({ memberId: '507f1f77bcf86cd799439012', kind: 'contribution', amountMinor: 1250 })
+    .expect(401)
+  await agent
+    .delete('/api/groups/507f1f77bcf86cd799439011/transactions/507f1f77bcf86cd799439013')
+    .set('X-CSRF-Token', csrfToken)
+    .expect(401)
+  await agent
+    .delete('/api/groups/507f1f77bcf86cd799439011/transactions/507f1f77bcf86cd799439013')
+    .set('X-CSRF-Token', csrfToken)
     .expect(401)
   assert.equal(calls.length, 0)
 })
@@ -410,6 +421,51 @@ test('transaction PUT rejects malformed path IDs and invalid replacement data', 
     .send({ ...body, amountMinor: 0 })
     .expect(400)
 
+  assert.deepEqual(calls, [])
+})
+
+test('transaction DELETE requires CSRF and removes only the requested owned-group transaction', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'transaction_deleter', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const transactionId = new mongoose.Types.ObjectId().toString()
+  const path = `/api/groups/${groupId}/transactions/${transactionId}`
+
+  await agent.delete(path).expect(403)
+
+  await agent
+    .delete(path)
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .expect(204)
+
+  assert.deepEqual(calls, [[
+    'deleteTransaction',
+    registration.body.user.id,
+    groupId,
+    transactionId,
+  ]])
+})
+
+test('transaction DELETE rejects malformed path IDs without writing', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'invalid_delete', password: 'a-secure-test-password' })
+    .expect(201)
+  const csrf = { 'X-CSRF-Token': registration.body.csrfToken }
+  const transactionId = new mongoose.Types.ObjectId().toString()
+
+  await agent.delete(`/api/groups/not-an-object-id/transactions/${transactionId}`).set(csrf).expect(400)
+  await agent.delete(`/api/groups/${new mongoose.Types.ObjectId()}/transactions/not-an-object-id`).set(csrf).expect(400)
   assert.deepEqual(calls, [])
 })
 

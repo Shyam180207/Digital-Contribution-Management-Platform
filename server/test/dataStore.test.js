@@ -46,7 +46,7 @@ test('dashboard reads only groups owned by the requesting account', async () => 
           _id: userMember,
           name: 'Aarav Sharma',
           phone: '555-0101',
-          group: { name: group.name },
+          group: { _id: groupId, name: group.name },
           createdAt: new Date('2026-10-30T12:00:00Z'),
         }])
       },
@@ -65,10 +65,11 @@ test('dashboard reads only groups owned by the requesting account', async () => 
         seenQueries.push(['transactions', filter.group.$in])
         return query([{
           _id: new mongoose.Types.ObjectId(),
-          member: { name: 'Aarav Sharma' },
-          group: { name: group.name, currency: group.currency },
+          member: { _id: userMember, name: 'Aarav Sharma' },
+          group: { _id: groupId, name: group.name, currency: group.currency },
           kind: 'contribution',
           amountMinor: 2500,
+          note: 'Monthly contribution',
           createdAt: new Date('2026-10-31T12:00:00Z'),
         }])
       },
@@ -91,7 +92,11 @@ test('dashboard reads only groups owned by the requesting account', async () => 
     initials: 'GC',
   })
   assert.equal(dashboard.members[0].name, 'Aarav Sharma')
+  assert.equal(dashboard.members[0].groupId, String(groupId))
   assert.equal(dashboard.activities[0].amountMinor, 2500)
+  assert.equal(dashboard.activities[0].groupId, String(groupId))
+  assert.equal(dashboard.activities[0].memberId, String(userMember))
+  assert.equal(dashboard.activities[0].note, 'Monthly contribution')
   assert.equal(dashboard.chart.labels.length, 7)
 })
 
@@ -481,4 +486,55 @@ test('transaction update rejects members from a different group before writing',
     { status: 404 },
   )
   assert.equal(transactionUpdateCalled, false)
+})
+
+test('transaction deletion requires group ownership and deletes by both IDs', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const seenQueries = []
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        seenQueries.push(['group', filter])
+        return query({ _id: groupId })
+      },
+    },
+    TransactionModel: {
+      findOneAndDelete(filter) {
+        seenQueries.push(['delete', filter])
+        return query({ _id: transactionId })
+      },
+    },
+  })
+
+  assert.deepEqual(await store.deleteTransaction(ownerId, groupId, transactionId), {
+    id: String(transactionId),
+  })
+  assert.deepEqual(seenQueries, [
+    ['group', { _id: groupId, owner: ownerId }],
+    ['delete', { _id: transactionId, group: groupId }],
+  ])
+})
+
+test('transaction deletion does not delete records from groups the user does not own', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  let transactionDeleteCalled = false
+  const store = createDataStore({
+    GroupModel: { findOne: () => query(null) },
+    TransactionModel: {
+      findOneAndDelete() {
+        transactionDeleteCalled = true
+        return query(null)
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.deleteTransaction(ownerId, groupId, transactionId),
+    { status: 404 },
+  )
+  assert.equal(transactionDeleteCalled, false)
 })
