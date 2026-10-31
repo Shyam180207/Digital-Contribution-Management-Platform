@@ -27,6 +27,11 @@ const memberSchema = new mongoose.Schema(
 )
 
 memberSchema.index({ group: 1 })
+memberSchema.virtual('transactions', {
+  ref: 'Transaction',
+  localField: '_id',
+  foreignField: 'member',
+})
 
 const Member = mongoose.models.Member || mongoose.model('Member', memberSchema)
 

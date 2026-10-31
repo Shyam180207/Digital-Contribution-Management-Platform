@@ -96,3 +96,28 @@ test('model collections and query indexes are declared', () => {
   assert.equal(Transaction.collection.collectionName, 'transactions')
   assert.ok(Transaction.schema.indexes().some(([index]) => index.group === 1 && index.createdAt === -1))
 })
+
+test('entity references and inverse relationship virtuals are declared', () => {
+  assert.equal(SavingsGroup.schema.path('owner').options.ref, 'User')
+  assert.equal(Member.schema.path('group').options.ref, 'SavingsGroup')
+  assert.equal(Transaction.schema.path('group').options.ref, 'SavingsGroup')
+  assert.equal(Transaction.schema.path('member').options.ref, 'Member')
+  assert.equal(Transaction.schema.path('createdBy').options.ref, 'User')
+
+  assert.deepEqual(
+    [User.schema.virtuals.groups.options.ref, User.schema.virtuals.groups.options.foreignField],
+    ['SavingsGroup', 'owner'],
+  )
+  assert.deepEqual(
+    [SavingsGroup.schema.virtuals.members.options.ref, SavingsGroup.schema.virtuals.members.options.foreignField],
+    ['Member', 'group'],
+  )
+  assert.deepEqual(
+    [SavingsGroup.schema.virtuals.transactions.options.ref, SavingsGroup.schema.virtuals.transactions.options.foreignField],
+    ['Transaction', 'group'],
+  )
+  assert.deepEqual(
+    [Member.schema.virtuals.transactions.options.ref, Member.schema.virtuals.transactions.options.foreignField],
+    ['Transaction', 'member'],
+  )
+})
