@@ -14,6 +14,25 @@ and transactions in MongoDB. Configure and start MongoDB and the API using
 private `JWT_SECRET`; copy `server/.env.example` to `server/.env` to
 configure them locally.
 
+## Run with Docker Compose
+
+Install Docker Desktop (or Docker Engine with Compose v2), then start the full
+stack from the repository root:
+
+```sh
+export JWT_SECRET="$(openssl rand -base64 48)"
+docker compose up --build
+```
+
+Open [http://localhost:8080](http://localhost:8080). The Compose stack starts
+MongoDB, the Express API, and an Nginx-served React build. Nginx proxies `/api`
+requests to the API, so the browser uses same-origin authentication cookies.
+MongoDB records and uploaded receipts use named Docker volumes and survive
+container recreation. Stop the stack with `Ctrl+C`, then run
+`docker compose down`; use `docker compose down -v` only when intentionally
+removing the local database and receipt data. Set Google OAuth variables in
+your shell if you want to test Google sign-in locally.
+
 ## Capstone plan
 
 ### Day 1: Define the product and data model

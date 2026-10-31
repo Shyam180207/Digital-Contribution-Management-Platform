@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/uploads/receipts
+.venv
+__pycache__
+*.py[cod]
+instance
+tests
