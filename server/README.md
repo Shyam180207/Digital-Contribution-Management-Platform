@@ -117,6 +117,15 @@ available, but stored files may be lost when the service restarts or redeploys.
 The MongoDB records remain persistent; use a paid persistent disk or external
 object storage if receipt files must survive service replacement.
 
+## Run the complete app with Docker
+
+The repository-root [`docker-compose.yml`](../docker-compose.yml) runs MongoDB,
+the API, and the production React client behind Nginx. Follow the
+[Docker Compose instructions](../README.md#run-with-docker-compose) from the
+repository root. The API container binds to `0.0.0.0`; its database URI points
+to the Compose MongoDB service. Local MongoDB and receipt files are persisted
+using named volumes.
+
 ## Bruno collection
 
 The [`bruno/`](../bruno/) folder contains a Bruno collection documenting all
