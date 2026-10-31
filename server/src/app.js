@@ -1,15 +1,51 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import cookieParser from 'cookie-parser'
 import express from 'express'
-import session from 'express-session'
 import mongoose from 'mongoose'
 import { createDataStore } from './dataStore.js'
 import { HttpError } from './httpError.js'
 import { hashPassword, verifyPassword } from './passwords.js'
+import {
+  accessTokenLifetimeSeconds,
+  createAccessToken,
+  isInvalidAccessTokenError,
+  verifyAccessToken,
+} from './tokens.js'
 import User from '../models/User.js'
 
 const usernamePattern = /^[a-z0-9_.-]{3,40}$/
 const passwordMinimumLength = 10
 const passwordMaximumLength = 128
+const accessTokenCookie = 'commonfund.token'
+const csrfCookie = 'commonfund.csrf'
+
+function cookieOptions(secure) {
+  return { path: '/', sameSite: 'lax', secure }
+}
+
+function clearAuthenticationCookies(res, secure) {
+  res.clearCookie(accessTokenCookie, { ...cookieOptions(secure), httpOnly: true })
+  res.clearCookie(csrfCookie, cookieOptions(secure))
+}
+
+function setAuthenticationCookies(res, userId, csrfToken, secret, secure) {
+  res.cookie(accessTokenCookie, createAccessToken(userId, secret), {
+    ...cookieOptions(secure),
+    httpOnly: true,
+    maxAge: accessTokenLifetimeSeconds * 1000,
+  })
+  res.cookie(csrfCookie, csrfToken, {
+    ...cookieOptions(secure),
+    maxAge: accessTokenLifetimeSeconds * 1000,
+  })
+}
+
+function setCsrfCookie(res, csrfToken, secure) {
+  res.cookie(csrfCookie, csrfToken, {
+    ...cookieOptions(secure),
+    maxAge: accessTokenLifetimeSeconds * 1000,
+  })
+}
 
 function csrfMatches(expected, actual) {
   if (typeof expected !== 'string' || typeof actual !== 'string') return false
@@ -20,31 +56,38 @@ function csrfMatches(expected, actual) {
 }
 
 function requireCsrf(req, res, next) {
-  if (!csrfMatches(req.session.csrfToken, req.get('x-csrf-token'))) {
-    return res.status(403).json({ error: 'Your session token is missing or expired. Refresh and try again.' })
+  if (!csrfMatches(req.cookies[csrfCookie], req.get('x-csrf-token'))) {
+    return res.status(403).json({ error: 'Your CSRF token is missing or expired. Refresh and try again.' })
   }
   return next()
 }
 
-function requireAuthentication(req, res, next) {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Please sign in to continue.' })
+function requireAuthentication(secret, secureCookies) {
+  return (req, res, next) => {
+    const token = req.cookies[accessTokenCookie]
+    if (!token) {
+      return res.status(401).json({ error: 'Please sign in to continue.' })
+    }
+
+    try {
+      const payload = verifyAccessToken(token, secret)
+      if (typeof payload.sub !== 'string' || !mongoose.isValidObjectId(payload.sub)) {
+        return res.status(401).json({ error: 'Please sign in to continue.' })
+      }
+      req.userId = payload.sub
+      return next()
+    } catch (error) {
+      if (isInvalidAccessTokenError(error)) {
+        clearAuthenticationCookies(res, secureCookies)
+        return res.status(401).json({ error: 'Your sign-in has expired. Please sign in again.' })
+      }
+      return next(error)
+    }
   }
-  return next()
 }
 
-function regenerateSession(req, userId) {
-  return new Promise((resolve, reject) => {
-    req.session.regenerate((error) => {
-      if (error) return reject(error)
-      req.session.userId = String(userId)
-      req.session.csrfToken = randomBytes(32).toString('hex')
-      req.session.save((saveError) => {
-        if (saveError) return reject(saveError)
-        return resolve(req.session.csrfToken)
-      })
-    })
-  })
+function newCsrfToken() {
+  return randomBytes(32).toString('hex')
 }
 
 function serializeUser(user) {
@@ -92,30 +135,19 @@ function validateTransactionInput(body) {
 export function createApp({
   dataStore = createDataStore(),
   UserModel = User,
-  sessionStore,
-  sessionSecret = process.env.SESSION_SECRET,
+  jwtSecret = process.env.JWT_SECRET,
   clientOrigin = process.env.CLIENT_ORIGIN,
+  secureCookies = process.env.NODE_ENV === 'production',
 } = {}) {
-  if (typeof sessionSecret !== 'string' || sessionSecret.length < 32) {
-    throw new Error('SESSION_SECRET must contain at least 32 characters.')
+  if (typeof jwtSecret !== 'string' || jwtSecret.length < 32) {
+    throw new Error('JWT_SECRET must contain at least 32 characters.')
   }
 
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json({ limit: '16kb' }))
-  app.use(session({
-    name: 'commonfund.sid',
-    secret: sessionSecret,
-    store: sessionStore,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-    },
-  }))
+  app.use(cookieParser())
+  const requireAuth = requireAuthentication(jwtSecret, secureCookies)
 
   app.use((req, res, next) => {
     res.set('Cache-Control', 'no-store')
@@ -124,7 +156,7 @@ export function createApp({
       res.set('Access-Control-Allow-Credentials', 'true')
       res.set('Vary', 'Origin')
       res.set('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token')
-      res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     }
     if (req.method === 'OPTIONS') return res.sendStatus(204)
     return next()
@@ -137,20 +169,40 @@ export function createApp({
     })
   })
 
-  app.get('/api/auth/session', async (req, res, next) => {
-    if (!req.session.csrfToken) req.session.csrfToken = randomBytes(32).toString('hex')
+  app.get('/api/auth/session', async (req, res) => {
+    const csrfToken = req.cookies[csrfCookie] || newCsrfToken()
+    if (!req.cookies[csrfCookie]) setCsrfCookie(res, csrfToken, secureCookies)
 
-    if (!req.session.userId) {
-      return res.json({ user: null, csrfToken: req.session.csrfToken })
+    const token = req.cookies[accessTokenCookie]
+    if (!token) return res.json({ user: null, csrfToken })
+
+    let payload
+    try {
+      payload = verifyAccessToken(token, jwtSecret)
+    } catch (error) {
+      if (!isInvalidAccessTokenError(error)) throw error
+      clearAuthenticationCookies(res, secureCookies)
+      const newToken = newCsrfToken()
+      setCsrfCookie(res, newToken, secureCookies)
+      return res.json({ user: null, csrfToken: newToken })
     }
 
-    const user = await UserModel.findById(req.session.userId).select('username').lean()
+    if (typeof payload.sub !== 'string' || !mongoose.isValidObjectId(payload.sub)) {
+      clearAuthenticationCookies(res, secureCookies)
+      const newToken = newCsrfToken()
+      setCsrfCookie(res, newToken, secureCookies)
+      return res.json({ user: null, csrfToken: newToken })
+    }
+
+    const user = await UserModel.findById(payload.sub).select('username').lean()
     if (!user) {
-      delete req.session.userId
-      return res.json({ user: null, csrfToken: req.session.csrfToken })
+      clearAuthenticationCookies(res, secureCookies)
+      const newToken = newCsrfToken()
+      setCsrfCookie(res, newToken, secureCookies)
+      return res.json({ user: null, csrfToken: newToken })
     }
 
-    return res.json({ user: serializeUser(user), csrfToken: req.session.csrfToken })
+    return res.json({ user: serializeUser(user), csrfToken })
   })
 
   app.post('/api/auth/register', requireCsrf, async (req, res) => {
@@ -166,7 +218,8 @@ export function createApp({
       username,
       passwordHash: await hashPassword(password),
     })
-    const csrfToken = await regenerateSession(req, user._id)
+    const csrfToken = newCsrfToken()
+    setAuthenticationCookies(res, user._id, csrfToken, jwtSecret, secureCookies)
     return res.status(201).json({ user: serializeUser(user), csrfToken })
   })
 
@@ -182,77 +235,75 @@ export function createApp({
       throw new HttpError(401, 'Username or password is incorrect.')
     }
 
-    const csrfToken = await regenerateSession(req, user._id)
+    const csrfToken = newCsrfToken()
+    setAuthenticationCookies(res, user._id, csrfToken, jwtSecret, secureCookies)
     return res.json({ user: serializeUser(user), csrfToken })
   })
 
-  app.post('/api/auth/logout', requireCsrf, requireAuthentication, (req, res, next) => {
-    req.session.destroy((error) => {
-      if (error) return next(error)
-      res.clearCookie('commonfund.sid', { httpOnly: true, sameSite: 'lax' })
-      return res.sendStatus(204)
-    })
+  app.post('/api/auth/logout', requireCsrf, requireAuth, (req, res) => {
+    clearAuthenticationCookies(res, secureCookies)
+    return res.sendStatus(204)
   })
 
-  app.get('/api/dashboard', requireAuthentication, async (req, res) => {
-    return res.json(await dataStore.getDashboard(req.session.userId))
+  app.get('/api/dashboard', requireAuth, async (req, res) => {
+    return res.json(await dataStore.getDashboard(req.userId))
   })
 
-  app.get('/api/groups', requireAuthentication, async (req, res) => {
-    return res.json(await dataStore.listGroups(req.session.userId))
+  app.get('/api/groups', requireAuth, async (req, res) => {
+    return res.json(await dataStore.listGroups(req.userId))
   })
 
-  app.get('/api/members', requireAuthentication, async (req, res) => {
-    return res.json(await dataStore.listMembers(req.session.userId))
+  app.get('/api/members', requireAuth, async (req, res) => {
+    return res.json(await dataStore.listMembers(req.userId))
   })
 
-  app.get('/api/groups/:groupId/members', requireAuthentication, async (req, res) => {
+  app.get('/api/groups/:groupId/members', requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
-    return res.json(await dataStore.listGroupMembers(req.session.userId, req.params.groupId))
+    return res.json(await dataStore.listGroupMembers(req.userId, req.params.groupId))
   })
 
-  app.get('/api/transactions', requireAuthentication, async (req, res) => {
-    return res.json(await dataStore.listTransactions(req.session.userId))
+  app.get('/api/transactions', requireAuth, async (req, res) => {
+    return res.json(await dataStore.listTransactions(req.userId))
   })
 
-  app.get('/api/groups/:groupId/transactions', requireAuthentication, async (req, res) => {
+  app.get('/api/groups/:groupId/transactions', requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
-    return res.json(await dataStore.listTransactions(req.session.userId, req.params.groupId))
+    return res.json(await dataStore.listTransactions(req.userId, req.params.groupId))
   })
 
-  app.post('/api/groups', requireCsrf, requireAuthentication, async (req, res) => {
+  app.post('/api/groups', requireCsrf, requireAuth, async (req, res) => {
     const group = await dataStore.createGroup(
-      req.session.userId,
+      req.userId,
       validateGroupInput(req.body ?? {}),
     )
     return res.status(201).json({ group })
   })
 
-  app.post('/api/groups/:groupId/members', requireCsrf, requireAuthentication, async (req, res) => {
+  app.post('/api/groups/:groupId/members', requireCsrf, requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     const member = await dataStore.createMember(
-      req.session.userId,
+      req.userId,
       req.params.groupId,
       validateMemberInput(req.body ?? {}),
     )
     return res.status(201).json({ member })
   })
 
-  app.post('/api/groups/:groupId/transactions', requireCsrf, requireAuthentication, async (req, res) => {
+  app.post('/api/groups/:groupId/transactions', requireCsrf, requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     const transaction = await dataStore.createTransaction(
-      req.session.userId,
+      req.userId,
       req.params.groupId,
       validateTransactionInput(req.body ?? {}),
     )
     return res.status(201).json({ transaction })
   })
 
-  app.put('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuthentication, async (req, res) => {
+  app.put('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     if (!mongoose.isValidObjectId(req.params.transactionId)) throw new HttpError(400, 'Invalid transaction ID.')
     const transaction = await dataStore.updateTransaction(
-      req.session.userId,
+      req.userId,
       req.params.groupId,
       req.params.transactionId,
       validateTransactionInput(req.body ?? {}),
@@ -260,11 +311,11 @@ export function createApp({
     return res.json({ transaction })
   })
 
-  app.delete('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuthentication, async (req, res) => {
+  app.delete('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     if (!mongoose.isValidObjectId(req.params.transactionId)) throw new HttpError(400, 'Invalid transaction ID.')
     await dataStore.deleteTransaction(
-      req.session.userId,
+      req.userId,
       req.params.groupId,
       req.params.transactionId,
     )

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 import request from 'supertest'
 import { createApp } from '../src/app.js'
@@ -93,7 +94,7 @@ function createTestApp(overrides = {}) {
   const app = createApp({
     dataStore,
     UserModel: createTestUserModel(),
-    sessionSecret: 'test-secret-with-more-than-thirty-two-characters',
+    jwtSecret: 'test-secret-with-more-than-thirty-two-characters',
   })
 
   return { app, calls }
@@ -104,7 +105,7 @@ async function getCsrfToken(agent) {
   return response.body.csrfToken
 }
 
-test('protected dashboard reads require an authenticated session', async () => {
+test('protected dashboard reads require a valid JWT', async () => {
   const { app, calls } = createTestApp()
   const agent = request.agent(app)
   const csrfToken = await getCsrfToken(agent)
@@ -188,9 +189,48 @@ test('registration authenticates and dashboard reads are scoped to that user', a
 
   assert.equal(registration.body.user.username, 'shyam_01')
   assert.equal(registration.body.csrfToken.length, 64)
+  assert.equal(JSON.stringify(registration.body).includes('commonfund.token'), false)
+  const cookies = registration.headers['set-cookie']
+  assert.ok(cookies.some((cookie) => cookie.startsWith('commonfund.token=') && cookie.includes('HttpOnly')))
+  assert.ok(cookies.some((cookie) => cookie.startsWith('commonfund.csrf=') && !cookie.includes('HttpOnly')))
 
   await agent.get('/api/dashboard').expect(200)
   assert.deepEqual(calls, [['getDashboard', registration.body.user.id]])
+})
+
+test('JWT authentication rejects expired and tampered tokens', async () => {
+  const { app, calls } = createTestApp()
+  const userId = new mongoose.Types.ObjectId().toString()
+  const secret = 'test-secret-with-more-than-thirty-two-characters'
+  const expiredToken = jwt.sign({}, secret, {
+    algorithm: 'HS256',
+    audience: 'commonfund-client',
+    expiresIn: -1,
+    issuer: 'commonfund-api',
+    subject: userId,
+  })
+
+  await request(app)
+    .get('/api/dashboard')
+    .set('Cookie', `commonfund.token=${expiredToken}`)
+    .expect(401)
+  await request(app)
+    .get('/api/dashboard')
+    .set('Cookie', `commonfund.token=${expiredToken.slice(0, -1)}x`)
+    .expect(401)
+
+  assert.deepEqual(calls, [])
+})
+
+test('CSRF protection requires the header to match the readable cookie', async () => {
+  const { app } = createTestApp()
+
+  await request(app)
+    .post('/api/auth/register')
+    .set('Cookie', 'commonfund.csrf=cookie-token')
+    .set('X-CSRF-Token', 'different-token')
+    .send({ username: 'csrf_mismatch', password: 'a-secure-test-password' })
+    .expect(403)
 })
 
 test('authentication rejects passwords longer than the supported maximum', async () => {
@@ -214,7 +254,7 @@ test('authentication rejects passwords longer than the supported maximum', async
   assert.deepEqual(calls, [])
 })
 
-test('login checks the password and creates a fresh authenticated session', async () => {
+test('login checks the password and issues a fresh authenticated JWT', async () => {
   const { app } = createTestApp()
   const agent = request.agent(app)
   const initialToken = await getCsrfToken(agent)

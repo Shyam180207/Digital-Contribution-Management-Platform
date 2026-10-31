@@ -1,22 +1,19 @@
 import 'dotenv/config'
-import MongoStore from 'connect-mongo'
 import mongoose from 'mongoose'
 import { createApp } from './app.js'
 
 const port = Number(process.env.PORT ?? 3001)
 const mongoUri = process.env.MONGODB_URI
-const sessionSecret = process.env.SESSION_SECRET
+const jwtSecret = process.env.JWT_SECRET
 
 if (!mongoUri) throw new Error('MONGODB_URI must be configured before starting the API.')
-if (!sessionSecret) throw new Error('SESSION_SECRET must be configured before starting the API.')
+if (!jwtSecret || jwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must contain at least 32 characters.')
+}
 
 await mongoose.connect(mongoUri)
 
-const sessionStore = MongoStore.create({
-  client: mongoose.connection.getClient(),
-  collectionName: 'sessions',
-})
-const app = createApp({ sessionStore, sessionSecret })
+const app = createApp({ jwtSecret })
 
 app.listen(port, '127.0.0.1', () => {
   process.stderr.write(`CommonFund API listening on http://127.0.0.1:${port}\n`)
