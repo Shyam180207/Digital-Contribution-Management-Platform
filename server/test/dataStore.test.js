@@ -229,3 +229,126 @@ test('group transaction list refuses access to a group not owned by the user', a
   await assert.rejects(store.listTransactions(ownerId, groupId), { status: 404 })
   assert.equal(transactionQueryCalled, false)
 })
+
+test('transaction creation verifies group and member ownership before writing', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const memberId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const seenQueries = []
+  const createdTransaction = {
+    _id: transactionId,
+    kind: 'payout',
+    amountMinor: 1250,
+    note: 'Monthly payout',
+    createdAt: new Date('2026-10-30T12:00:00Z'),
+  }
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        seenQueries.push(['group', filter])
+        return query({
+          _id: groupId,
+          name: 'Garden Circle',
+          currency: 'INR',
+        })
+      },
+    },
+    MemberModel: {
+      findOne(filter) {
+        seenQueries.push(['member', filter])
+        return query({ _id: memberId, name: 'Aarav Sharma' })
+      },
+    },
+    TransactionModel: {
+      async create(data) {
+        seenQueries.push(['create', data])
+        return createdTransaction
+      },
+    },
+  })
+
+  const transaction = await store.createTransaction(ownerId, groupId, {
+    memberId,
+    kind: 'payout',
+    amountMinor: 1250,
+    note: 'Monthly payout',
+  })
+
+  assert.deepEqual(seenQueries, [
+    ['group', { _id: groupId, owner: ownerId }],
+    ['member', { _id: memberId, group: groupId }],
+    ['create', {
+      group: groupId,
+      member: memberId,
+      createdBy: ownerId,
+      kind: 'payout',
+      amountMinor: 1250,
+      note: 'Monthly payout',
+    }],
+  ])
+  assert.deepEqual(transaction, {
+    id: String(transactionId),
+    group: { id: String(groupId), name: 'Garden Circle', currency: 'INR' },
+    member: { id: String(memberId), name: 'Aarav Sharma' },
+    kind: 'payout',
+    amountMinor: 1250,
+    note: 'Monthly payout',
+    createdAt: createdTransaction.createdAt,
+  })
+})
+
+test('transaction creation rejects groups not owned by the user', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  let memberQueryCalled = false
+  const store = createDataStore({
+    GroupModel: { findOne: () => query(null) },
+    MemberModel: {
+      findOne() {
+        memberQueryCalled = true
+        return query(null)
+      },
+    },
+    TransactionModel: { create: async () => assert.fail('must not create a transaction') },
+  })
+
+  await assert.rejects(
+    store.createTransaction(ownerId, groupId, {
+      memberId: new mongoose.Types.ObjectId(),
+      kind: 'contribution',
+      amountMinor: 1250,
+      note: null,
+    }),
+    { status: 404 },
+  )
+  assert.equal(memberQueryCalled, false)
+})
+
+test('transaction creation rejects a member from another group', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  let transactionCreateCalled = false
+  const store = createDataStore({
+    GroupModel: {
+      findOne: () => query({ _id: groupId, name: 'Garden Circle', currency: 'INR' }),
+    },
+    MemberModel: { findOne: () => query(null) },
+    TransactionModel: {
+      async create() {
+        transactionCreateCalled = true
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.createTransaction(ownerId, groupId, {
+      memberId: new mongoose.Types.ObjectId(),
+      kind: 'contribution',
+      amountMinor: 1250,
+      note: null,
+    }),
+    { status: 404 },
+  )
+  assert.equal(transactionCreateCalled, false)
+})

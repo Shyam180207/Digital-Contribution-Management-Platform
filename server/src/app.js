@@ -70,6 +70,24 @@ function validateMemberInput(body) {
   return { name, phone: phone || null }
 }
 
+function validateTransactionInput(body) {
+  const memberId = typeof body.memberId === 'string' ? body.memberId.trim() : ''
+  const kind = body.kind
+  const amountMinor = body.amountMinor
+  const note = typeof body.note === 'string' ? body.note.trim() : ''
+
+  if (!mongoose.isValidObjectId(memberId)) throw new HttpError(400, 'A valid member ID is required.')
+  if (kind !== 'contribution' && kind !== 'payout') {
+    throw new HttpError(400, 'Transaction kind must be contribution or payout.')
+  }
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < 1 || amountMinor > 99_999_999_999) {
+    throw new HttpError(400, 'Amount must be a positive safe integer in minor currency units.')
+  }
+  if (note.length > 200) throw new HttpError(400, 'Transaction note must be 200 characters or fewer.')
+
+  return { memberId, kind, amountMinor, note: note || null }
+}
+
 export function createApp({
   dataStore = createDataStore(),
   UserModel = User,
@@ -215,6 +233,16 @@ export function createApp({
       validateMemberInput(req.body ?? {}),
     )
     return res.status(201).json({ member })
+  })
+
+  app.post('/api/groups/:groupId/transactions', requireCsrf, requireAuthentication, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
+    const transaction = await dataStore.createTransaction(
+      req.session.userId,
+      req.params.groupId,
+      validateTransactionInput(req.body ?? {}),
+    )
+    return res.status(201).json({ transaction })
   })
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }))

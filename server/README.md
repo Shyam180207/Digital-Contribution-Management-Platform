@@ -44,6 +44,9 @@ of falling back to in-memory or demo data.
   account's groups.
 - `POST /api/groups` creates a group owned by the authenticated account.
 - `POST /api/groups/:groupId/members` adds a member only to an owned group.
+- `POST /api/groups/:groupId/transactions` records a contribution or payout
+  for a member of an owned group. Amounts use integer minor currency units
+  (for example, `1250` represents 12.50).
 
 JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
 

@@ -37,7 +37,7 @@ export function createDataStore({
 
   async function getOwnedGroup(userId, groupId) {
     const group = await GroupModel.findOne({ _id: groupId, owner: userId })
-      .select('_id')
+      .select('_id name currency')
       .lean()
     if (!group) throw new HttpError(404, 'Group not found.')
     return group
@@ -205,6 +205,40 @@ export function createDataStore({
         phone: member.phone,
         group: String(group._id),
         joined: member.createdAt,
+      }
+    },
+
+    async createTransaction(userId, groupId, transactionData) {
+      const group = await getOwnedGroup(userId, groupId)
+      const member = await MemberModel.findOne({
+        _id: transactionData.memberId,
+        group: group._id,
+      })
+        .select('_id name')
+        .lean()
+      if (!member) throw new HttpError(404, 'Member not found in this group.')
+
+      const transaction = await TransactionModel.create({
+        group: group._id,
+        member: member._id,
+        createdBy: userId,
+        kind: transactionData.kind,
+        amountMinor: transactionData.amountMinor,
+        note: transactionData.note,
+      })
+
+      return {
+        id: String(transaction._id),
+        group: {
+          id: String(group._id),
+          name: group.name,
+          currency: group.currency,
+        },
+        member: { id: String(member._id), name: member.name },
+        kind: transaction.kind,
+        amountMinor: transaction.amountMinor,
+        note: transaction.note,
+        createdAt: transaction.createdAt,
       }
     },
 
