@@ -54,6 +54,14 @@ export function createGroup(name, currency, csrfToken) {
   })
 }
 
+export function suggestTransactionNote(kind, csrfToken) {
+  return request('/api/ai/transaction-note', {
+    method: 'POST',
+    body: { kind },
+    csrfToken,
+  })
+}
+
 export function updateTransaction(groupId, transactionId, transaction, csrfToken) {
   return request(`/api/groups/${groupId}/transactions/${transactionId}`, {
     method: 'PUT',

@@ -31,7 +31,8 @@ MongoDB records and uploaded receipts use named Docker volumes and survive
 container recreation. Stop the stack with `Ctrl+C`, then run
 `docker compose down`; use `docker compose down -v` only when intentionally
 removing the local database and receipt data. Set Google OAuth variables in
-your shell if you want to test Google sign-in locally.
+your shell if you want to test Google sign-in locally. Set `GEMINI_API_KEY`
+privately to enable AI transaction-note suggestions.
 
 ## Capstone plan
 

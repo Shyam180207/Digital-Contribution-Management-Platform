@@ -5,6 +5,7 @@ import {
   createGroup,
   getSession,
   signOut,
+  suggestTransactionNote,
   uploadTransactionReceipt,
 } from '../src/api.js'
 
@@ -76,6 +77,21 @@ test('createGroup posts the requested group fields', async (t) => {
   })
 
   assert.deepEqual(await createGroup('Community Fund', 'USD', 'csrf-token'), { group })
+})
+
+test('suggestTransactionNote posts only the selected transaction kind', async (t) => {
+  mockFetch(t, async (path, options) => {
+    assert.equal(path, '/api/ai/transaction-note')
+    assert.equal(options.method, 'POST')
+    assert.equal(options.credentials, 'include')
+    assert.equal(options.headers['X-CSRF-Token'], 'csrf-token')
+    assert.deepEqual(JSON.parse(options.body), { kind: 'payout' })
+    return mockResponse({ note: 'Community payout' })
+  })
+
+  assert.deepEqual(await suggestTransactionNote('payout', 'csrf-token'), {
+    note: 'Community payout',
+  })
 })
 
 test('uploadTransactionReceipt sends a multipart receipt without overriding its boundary', async (t) => {

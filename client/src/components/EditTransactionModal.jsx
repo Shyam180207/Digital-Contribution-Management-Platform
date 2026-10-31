@@ -6,6 +6,7 @@ function EditTransactionModal({
   members,
   onClose,
   onSave,
+  onSuggestNote,
   onUploadReceipt,
   onDeleteReceipt,
 }) {
@@ -19,9 +20,11 @@ function EditTransactionModal({
   const [receipt, setReceipt] = useState(transaction.receipt ?? null)
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [isSuggestingNote, setIsSuggestingNote] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isRemovingReceipt, setIsRemovingReceipt] = useState(false)
-  const isBusy = isSaving || isUploading || isRemovingReceipt
+  const [noteStatus, setNoteStatus] = useState('')
+  const isBusy = isSaving || isSuggestingNote || isUploading || isRemovingReceipt
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -62,6 +65,20 @@ function EditTransactionModal({
       setError(requestError.message)
     } finally {
       setIsRemovingReceipt(false)
+    }
+  }
+
+  async function handleSuggestNote() {
+    setError('')
+    setNoteStatus('')
+    setIsSuggestingNote(true)
+    try {
+      setNote(await onSuggestNote(kind))
+      setNoteStatus('Suggestion added. Review and edit it before saving.')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSuggestingNote(false)
     }
   }
 
@@ -114,7 +131,15 @@ function EditTransactionModal({
             ))}
           </select>
           <label htmlFor="transaction-kind">Type</label>
-          <select id="transaction-kind" onChange={(event) => setKind(event.target.value)} value={kind}>
+          <select
+            disabled={isSuggestingNote}
+            id="transaction-kind"
+            onChange={(event) => {
+              setKind(event.target.value)
+              setNoteStatus('')
+            }}
+            value={kind}
+          >
             <option value="contribution">Contribution</option>
             <option value="payout">Payout</option>
           </select>
@@ -130,13 +155,28 @@ function EditTransactionModal({
             value={amount}
           />
           <label htmlFor="transaction-note">Note (optional)</label>
-          <input
-            id="transaction-note"
-            maxLength={200}
-            onChange={(event) => setNote(event.target.value)}
-            type="text"
-            value={note}
-          />
+          <div className="ai-note-control">
+            <input
+              id="transaction-note"
+              maxLength={200}
+              disabled={isSuggestingNote}
+              onChange={(event) => {
+                setNote(event.target.value)
+                setNoteStatus('')
+              }}
+              type="text"
+              value={note}
+            />
+            <button
+              className="text-button ai-note-button"
+              disabled={isBusy}
+              onClick={handleSuggestNote}
+              type="button"
+            >
+              {isSuggestingNote ? 'Generating…' : 'Suggest with AI'}
+            </button>
+          </div>
+          {noteStatus && <p className="receipt-hint" role="status">{noteStatus}</p>}
           <label htmlFor="transaction-receipt">Receipt</label>
           <div className="receipt-control">
             {receipt ? (

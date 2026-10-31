@@ -1,0 +1,25 @@
+meta {
+  name: Suggest transaction note
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/ai/transaction-note
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "kind": "contribution"
+  }
+}
+
+docs {
+  Generates a short transaction note suggestion using the server-configured Gemini API key. Only the transaction kind is sent to Gemini. Requires a signed-in session, CSRF token, and GEMINI_API_KEY on the API server.
+}
