@@ -29,6 +29,12 @@ const pageTitles = {
   activity: ['Recent activity', 'A closer look at contributions and payouts.'],
 }
 
+const googleSignInErrors = {
+  cancelled: 'Google sign-in was cancelled.',
+  failed: 'Google sign-in could not be completed. Please try again.',
+  state: 'Google sign-in could not be verified. Please start again.',
+}
+
 function App() {
   const [activePage, setActivePage] = useState('overview')
   const [search, setSearch] = useState('')
@@ -40,6 +46,7 @@ function App() {
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const oauthError = new URLSearchParams(window.location.search).get('oauthError')
 
   const refreshDashboard = useCallback(async () => {
     const data = await getDashboard()
@@ -181,7 +188,12 @@ function App() {
             <button type="button" onClick={() => window.location.reload()}>Retry connection</button>
           </div>
         )}
-        {!error && <AuthPage onAuthenticate={handleAuthenticate} />}
+        {!error && (
+          <AuthPage
+            initialError={googleSignInErrors[oauthError] ?? ''}
+            onAuthenticate={handleAuthenticate}
+          />
+        )}
       </>
     )
   }

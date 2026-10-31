@@ -1,6 +1,7 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import cookieParser from 'cookie-parser'
 import express from 'express'
+import { OAuth2Client } from 'google-auth-library'
 import mongoose from 'mongoose'
 import { createDataStore } from './dataStore.js'
 import { HttpError } from './httpError.js'
@@ -18,9 +19,48 @@ const passwordMinimumLength = 10
 const passwordMaximumLength = 128
 const accessTokenCookie = 'commonfund.token'
 const csrfCookie = 'commonfund.csrf'
+const googleStateCookie = 'commonfund.google-state'
+const googleStateLifetimeSeconds = 10 * 60
 
 function cookieOptions(secure) {
   return { path: '/', sameSite: 'lax', secure }
+}
+
+function googleStateCookieOptions(secure) {
+  return {
+    ...cookieOptions(secure),
+    httpOnly: true,
+    maxAge: googleStateLifetimeSeconds * 1000,
+    path: '/api/auth/google',
+  }
+}
+
+function googleUsername(subject) {
+  const suffix = createHash('sha256').update(subject).digest('hex').slice(0, 24)
+  return `google_${suffix}`
+}
+
+function googleRedirect(res, clientOrigin, status) {
+  const redirectUrl = new URL(clientOrigin || '/', clientOrigin || 'http://localhost')
+  redirectUrl.searchParams.set('oauthError', status)
+  return res.redirect(303, clientOrigin ? redirectUrl.toString() : `/?oauthError=${status}`)
+}
+
+async function findOrCreateGoogleUser(UserModel, subject) {
+  const existingUser = await UserModel.findOne({ googleSub: subject }).select('username').lean()
+  if (existingUser) return existingUser
+
+  try {
+    return await UserModel.create({
+      username: googleUsername(subject),
+      googleSub: subject,
+    })
+  } catch (error) {
+    if (error?.code !== 11000) throw error
+    const userCreatedConcurrently = await UserModel.findOne({ googleSub: subject }).select('username').lean()
+    if (userCreatedConcurrently) return userCreatedConcurrently
+    throw error
+  }
 }
 
 function clearAuthenticationCookies(res, secure) {
@@ -138,6 +178,10 @@ export function createApp({
   jwtSecret = process.env.JWT_SECRET,
   clientOrigin = process.env.CLIENT_ORIGIN,
   secureCookies = process.env.NODE_ENV === 'production',
+  googleClientId = process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret = process.env.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri = process.env.GOOGLE_REDIRECT_URI,
+  googleOAuthClient,
 } = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.length < 32) {
     throw new Error('JWT_SECRET must contain at least 32 characters.')
@@ -148,6 +192,11 @@ export function createApp({
   app.use(express.json({ limit: '16kb' }))
   app.use(cookieParser())
   const requireAuth = requireAuthentication(jwtSecret, secureCookies)
+  const oauthClient = googleOAuthClient ?? (
+    googleClientId && googleClientSecret && googleRedirectUri
+      ? new OAuth2Client(googleClientId, googleClientSecret, googleRedirectUri)
+      : null
+  )
 
   app.use((req, res, next) => {
     res.set('Cache-Control', 'no-store')
@@ -203,6 +252,68 @@ export function createApp({
     }
 
     return res.json({ user: serializeUser(user), csrfToken })
+  })
+
+  app.get('/api/auth/google', (req, res) => {
+    if (!oauthClient || !googleClientId) {
+      return res.status(503).json({ error: 'Google sign-in is not configured.' })
+    }
+
+    const state = randomBytes(32).toString('base64url')
+    res.cookie(googleStateCookie, state, googleStateCookieOptions(secureCookies))
+    return res.redirect(oauthClient.generateAuthUrl({
+      access_type: 'online',
+      prompt: 'select_account',
+      response_type: 'code',
+      scope: ['openid', 'email', 'profile'],
+      state,
+    }))
+  })
+
+  app.get('/api/auth/google/callback', async (req, res) => {
+    const state = req.query.state
+    const cookieState = req.cookies[googleStateCookie]
+    res.clearCookie(googleStateCookie, googleStateCookieOptions(secureCookies))
+
+    if (typeof state !== 'string' || !csrfMatches(cookieState, state)) {
+      return googleRedirect(res, clientOrigin, 'state')
+    }
+    if (req.query.error === 'access_denied') {
+      return googleRedirect(res, clientOrigin, 'cancelled')
+    }
+    if (typeof req.query.code !== 'string' || !oauthClient || !googleClientId) {
+      return googleRedirect(res, clientOrigin, 'failed')
+    }
+
+    let payload
+    try {
+      const { tokens } = await oauthClient.getToken(req.query.code)
+      if (typeof tokens.id_token !== 'string') {
+        throw new Error('Google OAuth token response did not include an ID token.')
+      }
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: tokens.id_token,
+        audience: googleClientId,
+      })
+      payload = ticket.getPayload()
+    } catch (error) {
+      console.error('Google OAuth token verification failed:', error)
+      return googleRedirect(res, clientOrigin, 'failed')
+    }
+
+    if (
+      typeof payload?.sub !== 'string'
+      || payload.sub.length === 0
+      || payload.sub.length > 255
+      || payload.email_verified !== true
+    ) {
+      return googleRedirect(res, clientOrigin, 'failed')
+    }
+
+    const user = await findOrCreateGoogleUser(UserModel, payload.sub)
+    const csrfToken = newCsrfToken()
+    setAuthenticationCookies(res, user._id, csrfToken, jwtSecret, secureCookies)
+    return res.redirect(303, clientOrigin || '/')
   })
 
   app.post('/api/auth/register', requireCsrf, async (req, res) => {

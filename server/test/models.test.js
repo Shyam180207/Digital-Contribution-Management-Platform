@@ -16,13 +16,15 @@ async function getValidationError(document) {
   assert.fail('Expected document validation to fail')
 }
 
-test('User normalizes usernames and requires a password hash', async () => {
+test('User normalizes usernames and validates password or Google authentication', async () => {
   const user = new User({ username: '  Shyam  ', passwordHash: 'hashed-password' })
 
   assert.equal(user.username, 'shyam')
   await user.validate()
   const error = await getValidationError(new User({ username: 'shyam' }))
   assert.equal(error.errors.passwordHash.kind, 'required')
+  const googleUser = new User({ username: 'google_user', googleSub: 'google-subject-123' })
+  await googleUser.validate()
   const invalidUsername = await getValidationError(
     new User({ username: 'spaces are not allowed', passwordHash: 'hashed-password' }),
   )
@@ -94,6 +96,9 @@ test('model collections and query indexes are declared', () => {
   assert.equal(SavingsGroup.collection.collectionName, 'savings_groups')
   assert.equal(Member.collection.collectionName, 'members')
   assert.equal(Transaction.collection.collectionName, 'transactions')
+  assert.ok(User.schema.indexes().some(([index, options]) => (
+    index.googleSub === 1 && options.unique && options.sparse
+  )))
   assert.ok(Transaction.schema.indexes().some(([index]) => index.group === 1 && index.createdAt === -1))
 })
 

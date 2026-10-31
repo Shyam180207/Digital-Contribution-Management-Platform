@@ -11,7 +11,14 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required() {
+        return !this.googleSub
+      },
+      select: false,
+    },
+    googleSub: {
+      type: String,
+      maxlength: 255,
       select: false,
     },
   },
@@ -22,6 +29,7 @@ const userSchema = new mongoose.Schema(
 )
 
 userSchema.index({ username: 1 }, { unique: true })
+userSchema.index({ googleSub: 1 }, { unique: true, sparse: true })
 userSchema.virtual('groups', {
   ref: 'SavingsGroup',
   localField: '_id',

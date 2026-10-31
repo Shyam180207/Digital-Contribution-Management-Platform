@@ -23,14 +23,19 @@ not foreign keys and do not enforce those checks by themselves.
 1. Start a MongoDB instance.
 2. Copy `.env.example` to `.env` and set a strong, random `JWT_SECRET` of at
    least 32 characters. Keep it private; changing it invalidates issued tokens.
-3. Install and start the API:
+3. To enable Google sign-in, create an OAuth 2.0 Web application client in
+   Google Cloud Console. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+   `GOOGLE_REDIRECT_URI`; the redirect URI must exactly match the authorized
+   redirect URI configured with Google. For local development, use the example
+   callback URI from `.env.example`.
+4. Install and start the API:
 
    ```sh
    npm install
    npm run dev
    ```
 
-4. In another terminal, start the React client:
+5. In another terminal, start the React client:
 
    ```sh
    cd ../client
@@ -48,6 +53,11 @@ of falling back to in-memory or demo data.
 - `GET /api/auth/session` provides the current user and CSRF token.
 - `POST /api/auth/register`, `POST /api/auth/login`, and `POST /api/auth/logout`
   manage authentication using JWT cookies. The token is not returned in JSON.
+- `GET /api/auth/google` starts Google OAuth, and
+  `GET /api/auth/google/callback` verifies Google's response and signs the user
+  into the same JWT-cookie authentication flow. Google accounts are identified
+  by Google's stable subject claim; their generated CommonFund username is not
+  their email address.
 - `GET /api/dashboard`, `GET /api/groups`, and `GET /api/members` read data
   belonging to the authenticated account.
 - `GET /api/groups/:groupId/members` and
