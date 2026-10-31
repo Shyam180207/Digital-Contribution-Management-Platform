@@ -46,6 +46,8 @@ function createTestUserModel() {
 
 function createTestApp(overrides = {}) {
   const calls = []
+  const receipts = new Map()
+  const receiptKey = (groupId, transactionId) => `${groupId}:${transactionId}`
   const dataStore = {
     async listGroups(userId) {
       calls.push(['listGroups', userId])
@@ -91,6 +93,30 @@ function createTestApp(overrides = {}) {
     },
     async deleteTransaction(userId, groupId, transactionId) {
       calls.push(['deleteTransaction', userId, groupId, transactionId])
+      const key = receiptKey(groupId, transactionId)
+      const receipt = receipts.get(key)?.receipt ?? null
+      receipts.delete(key)
+      return { id: transactionId, receipt }
+    },
+    async setTransactionReceipt(userId, groupId, transactionId, receipt) {
+      calls.push(['setTransactionReceipt', userId, groupId, transactionId])
+      const key = receiptKey(groupId, transactionId)
+      const previous = receipts.get(key)?.receipt ?? null
+      receipts.set(key, { userId: String(userId), receipt })
+      return previous
+    },
+    async getTransactionReceipt(userId, groupId, transactionId) {
+      calls.push(['getTransactionReceipt', userId, groupId, transactionId])
+      const stored = receipts.get(receiptKey(groupId, transactionId))
+      return stored?.userId === String(userId) ? stored.receipt : null
+    },
+    async clearTransactionReceipt(userId, groupId, transactionId) {
+      calls.push(['clearTransactionReceipt', userId, groupId, transactionId])
+      const key = receiptKey(groupId, transactionId)
+      const stored = receipts.get(key)
+      if (stored?.userId !== String(userId)) return null
+      receipts.delete(key)
+      return stored.receipt
     },
     ...overrides.dataStore,
   }
@@ -661,6 +687,130 @@ test('transaction DELETE rejects malformed path IDs without writing', async () =
   await agent.delete(`/api/groups/not-an-object-id/transactions/${transactionId}`).set(csrf).expect(400)
   await agent.delete(`/api/groups/${new mongoose.Types.ObjectId()}/transactions/not-an-object-id`).set(csrf).expect(400)
   assert.deepEqual(calls, [])
+})
+
+test('transaction receipts require authentication and a CSRF token', async () => {
+  const { app } = createTestApp()
+  const agent = request.agent(app)
+  const csrfToken = await getCsrfToken(agent)
+  const path = `/api/groups/${new mongoose.Types.ObjectId()}/transactions/${new mongoose.Types.ObjectId()}/receipt`
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
+
+  await agent
+    .post(path)
+    .set('X-CSRF-Token', csrfToken)
+    .attach('receipt', png, 'receipt.png')
+    .expect(401)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ username: 'receipt_owner', password: 'a-secure-test-password' })
+    .expect(201)
+  await agent.post(path).attach('receipt', png, 'receipt.png').expect(403)
+
+  assert.ok(registration.body.user.id)
+})
+
+test('transaction receipt upload validates file content and enforces owner-only downloads', async (t) => {
+  const { mkdtemp, readFile, readdir, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const receiptStorageDir = await mkdtemp(join(tmpdir(), 'commonfund-receipts-'))
+  t.after(() => rm(receiptStorageDir, { recursive: true, force: true }))
+
+  const { app, calls } = createTestApp({ appOptions: { receiptStorageDir } })
+  const owner = request.agent(app)
+  const initialToken = await getCsrfToken(owner)
+  const registration = await owner
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'receipt_owner_two', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const transactionId = new mongoose.Types.ObjectId().toString()
+  const path = `/api/groups/${groupId}/transactions/${transactionId}/receipt`
+  const csrf = { 'X-CSRF-Token': registration.body.csrfToken }
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
+
+  await owner
+    .post(path)
+    .set(csrf)
+    .expect(400, { error: 'Choose a receipt file to upload.' })
+  await owner
+    .post(`/api/groups/not-an-id/transactions/${transactionId}/receipt`)
+    .set(csrf)
+    .attach('receipt', png, 'receipt.png')
+    .expect(400, { error: 'Invalid group ID.' })
+  await owner
+    .post(path)
+    .set(csrf)
+    .attach('receipt', Buffer.alloc(5 * 1024 * 1024 + 1), {
+      filename: 'too-large.png',
+      contentType: 'image/png',
+    })
+    .expect(413, { error: 'Receipt files must be 5 MB or smaller.' })
+
+  await owner
+    .post(path)
+    .set(csrf)
+    .attach('receipt', Buffer.from('not a PNG'), { filename: 'spoofed.png', contentType: 'image/png' })
+    .expect(400, { error: 'The uploaded file must contain a valid PDF, JPEG, PNG, or WebP receipt.' })
+
+  const uploaded = await owner
+    .post(path)
+    .set(csrf)
+    .attach('receipt', png, { filename: '../October receipt.png', contentType: 'image/png' })
+    .expect(201)
+  assert.equal(uploaded.body.receipt.fileName, 'October receipt.png')
+  assert.equal(uploaded.body.receipt.mimeType, 'image/png')
+  assert.equal(uploaded.body.receipt.size, png.length)
+
+  const download = await owner.get(path).expect(200)
+  assert.match(download.headers['content-type'], /^image\/png/)
+  assert.equal(download.headers['x-content-type-options'], 'nosniff')
+  assert.match(download.headers['content-disposition'], /October receipt\.png/)
+  assert.deepEqual(download.body, png)
+
+  const otherUser = request.agent(app)
+  const otherCsrf = await getCsrfToken(otherUser)
+  const otherRegistration = await otherUser
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', otherCsrf)
+    .send({ username: 'receipt_other_user', password: 'a-secure-test-password' })
+    .expect(201)
+  await otherUser.get(path).expect(404, { error: 'Receipt not found.' })
+
+  const storedFiles = await readdir(receiptStorageDir)
+  assert.equal(storedFiles.length, 1)
+  assert.deepEqual(calls.slice(-2), [
+    ['getTransactionReceipt', registration.body.user.id, groupId, transactionId],
+    ['getTransactionReceipt', otherRegistration.body.user.id, groupId, transactionId],
+  ])
+  assert.equal(await readFile(join(receiptStorageDir, storedFiles[0])).then((buffer) => buffer.equals(png)), true)
+
+  const pdf = Buffer.from('%PDF-1.7\nreceipt\n%%EOF\n')
+  const replacement = await owner
+    .post(path)
+    .set(csrf)
+    .attach('receipt', pdf, { filename: 'replacement.pdf', contentType: 'application/pdf' })
+    .expect(200)
+  assert.equal(replacement.body.receipt.fileName, 'replacement.pdf')
+  assert.equal((await readdir(receiptStorageDir)).length, 1)
+
+  await owner.delete(path).set(csrf).expect(204)
+  assert.deepEqual(await readdir(receiptStorageDir), [])
+  await owner.get(path).expect(404, { error: 'Receipt not found.' })
+
+  await owner
+    .post(path)
+    .set(csrf)
+    .attach('receipt', png, 'before-transaction-delete.png')
+    .expect(201)
+  await owner
+    .delete(`/api/groups/${groupId}/transactions/${transactionId}`)
+    .set(csrf)
+    .expect(204)
+  assert.deepEqual(await readdir(receiptStorageDir), [])
 })
 
 test('invalid API inputs return client errors without writing', async () => {

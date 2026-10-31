@@ -3,9 +3,11 @@ import {
   authenticate,
   createGroup as createGroupRequest,
   deleteTransaction as deleteTransactionRequest,
+  deleteTransactionReceipt as deleteTransactionReceiptRequest,
   getDashboard,
   getSession,
   signOut,
+  uploadTransactionReceipt as uploadTransactionReceiptRequest,
   updateTransaction as updateTransactionRequest,
 } from './api.js'
 import ActivityFeed from './components/ActivityFeed.jsx'
@@ -172,6 +174,32 @@ function App() {
     }
   }, [csrfToken, refreshDashboard])
 
+  const handleUploadTransactionReceipt = useCallback(async (activity, file) => {
+    const result = await uploadTransactionReceiptRequest(
+      activity.groupId,
+      activity.id,
+      file,
+      csrfToken,
+    )
+    setNotice('Receipt uploaded.')
+    try {
+      await refreshDashboard()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+    return result.receipt
+  }, [csrfToken, refreshDashboard])
+
+  const handleDeleteTransactionReceipt = useCallback(async (activity) => {
+    await deleteTransactionReceiptRequest(activity.groupId, activity.id, csrfToken)
+    setNotice('Receipt removed.')
+    try {
+      await refreshDashboard()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }, [csrfToken, refreshDashboard])
+
   const stats = dashboard ? createStats(dashboard.summary) : []
   const [title, subtitle] = pageTitles[activePage]
 
@@ -286,7 +314,9 @@ function App() {
         <EditTransactionModal
           members={(dashboard?.members ?? []).filter((member) => member.groupId === editingActivity.groupId)}
           onClose={() => setEditingActivity(null)}
+          onDeleteReceipt={handleDeleteTransactionReceipt}
           onSave={handleUpdateTransaction}
+          onUploadReceipt={handleUploadTransactionReceipt}
           transaction={editingActivity}
         />
       )}
