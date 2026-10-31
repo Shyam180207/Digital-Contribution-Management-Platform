@@ -1255,6 +1255,40 @@
   font-size: 11px;
 }
 
+.auth-password-field {
+  position: relative;
+}
+
+.auth-password-field input {
+  padding-right: 42px;
+}
+
+.password-visibility {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-50%);
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #858496;
+  background: transparent;
+}
+
+.password-visibility:hover {
+  color: var(--purple);
+  background: #f4f2fc;
+}
+
+.auth-password-hint {
+  margin: -1px 0 2px;
+  color: #9291a1;
+  font-size: 9px;
+}
+
 .auth-submit {
   width: 100%;
   min-height: 40px;

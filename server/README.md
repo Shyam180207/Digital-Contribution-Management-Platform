@@ -5,6 +5,7 @@ provides account registration and login, an authenticated dashboard read, and
 group and member writes. Each dashboard query is scoped to the signed-in user.
 Sessions are stored in MongoDB, passwords are hashed with Node's `scrypt`, and
 state-changing requests require the session's CSRF token.
+Usernames are case-insensitive, and passwords must contain 10–128 characters.
 
 ## Data relationships
 

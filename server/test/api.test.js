@@ -193,6 +193,27 @@ test('registration authenticates and dashboard reads are scoped to that user', a
   assert.deepEqual(calls, [['getDashboard', registration.body.user.id]])
 })
 
+test('authentication rejects passwords longer than the supported maximum', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const csrfToken = await getCsrfToken(agent)
+  const longPassword = 'p'.repeat(129)
+
+  await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ username: 'long_password', password: longPassword })
+    .expect(400, { error: 'Password must contain 128 characters or fewer.' })
+
+  await agent
+    .post('/api/auth/login')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ username: 'long_password', password: longPassword })
+    .expect(400, { error: 'Password must contain 128 characters or fewer.' })
+
+  assert.deepEqual(calls, [])
+})
+
 test('login checks the password and creates a fresh authenticated session', async () => {
   const { app } = createTestApp()
   const agent = request.agent(app)
