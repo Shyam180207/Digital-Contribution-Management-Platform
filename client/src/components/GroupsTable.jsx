@@ -25,7 +25,7 @@ function GroupsTable({ groups, onViewAll, onCreate, compact = false }) {
         <div className="table-scroll">
           <table className="data-table groups-table">
             <thead>
-              <tr><th>GROUP NAME</th><th>MEMBERS</th><th>MONTHLY GOAL</th><th>PROGRESS</th><th aria-label="Actions" /></tr>
+              <tr><th>GROUP NAME</th><th>MEMBERS</th><th>BALANCE</th><th>CURRENCY</th><th aria-label="Actions" /></tr>
             </thead>
             <tbody>
               {groups.map((group) => (
@@ -39,13 +39,8 @@ function GroupsTable({ groups, onViewAll, onCreate, compact = false }) {
                   <td className="member-count">
                     <Icon name="users" size={16} /> {group.members} {group.members === 1 ? 'member' : 'members'}
                   </td>
-                  <td className="goal-cell">{formatCurrency(group.target)}</td>
-                  <td>
-                    <div className="progress-cell">
-                      <div className="progress-track"><span style={{ width: `${group.progress}%` }} /></div>
-                      <span>{group.progress}%</span>
-                    </div>
-                  </td>
+                  <td className="goal-cell">{formatCurrency(group.balanceMinor, group.currency)}</td>
+                  <td>{group.currency}</td>
                   <td><button className="row-action" type="button" aria-label={`Open ${group.name}`}><Icon name="chevronRight" size={18} /></button></td>
                 </tr>
               ))}

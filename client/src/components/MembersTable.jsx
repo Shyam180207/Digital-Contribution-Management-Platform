@@ -1,4 +1,5 @@
 import Avatar from './Avatar.jsx'
+import { formatDate } from '../data/dashboard.js'
 
 function MembersTable({ members }) {
   return (
@@ -26,11 +27,11 @@ function MembersTable({ members }) {
                   <td>
                     <div className="group-cell">
                       <Avatar initials={member.initials} color={member.color} />
-                      <div><strong>{member.name}</strong><span>{member.email}</span></div>
+                      <div><strong>{member.name}</strong><span>{member.phone || 'No phone provided'}</span></div>
                     </div>
                   </td>
                   <td>{member.group}</td>
-                  <td>{member.joined}</td>
+                  <td>{formatDate(member.joined)}</td>
                   <td><span className={`status-pill ${member.status === 'Active' ? 'status-active' : 'status-pending'}`}>{member.status}</span></td>
                 </tr>
               ))}

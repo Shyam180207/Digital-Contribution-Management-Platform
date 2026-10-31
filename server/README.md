@@ -1,28 +1,50 @@
-# CommonFund Mongoose models
+# CommonFund API
 
-These Mongoose models describe the CommonFund users, savings groups, members,
-and contribution or payout transactions. Collection names and field
-relationships follow the existing SQL schema. They are a model layer only;
-the current Flask application still uses SQLite and does not connect to MongoDB.
+The Express API uses MongoDB through the Mongoose models in `models/`. It
+provides account registration and login, an authenticated dashboard read, and
+group and member writes. Each dashboard query is scoped to the signed-in user.
+Sessions are stored in MongoDB, passwords are hashed with Node's `scrypt`, and
+state-changing requests require the session's CSRF token.
 
-## Install
+## Configure and run
 
-```sh
-npm install
-```
+1. Start a MongoDB instance.
+2. Copy `.env.example` to `.env` and set a long, random `SESSION_SECRET`.
+3. Install and start the API:
 
-Import models from `models/index.js`. For example:
+   ```sh
+   npm install
+   npm run dev
+   ```
 
-```js
-import { Member, SavingsGroup, Transaction, User } from './models/index.js'
-```
+4. In another terminal, start the React client:
 
-Money is stored as a positive integer in the currency's minor unit, matching
-`amount_minor` in the SQL schema. `createdAt` and `updatedAt` are managed by
-Mongoose.
+   ```sh
+   cd ../client
+   npm install
+   npm run dev
+   ```
+
+Vite proxies `/api` requests to `http://127.0.0.1:3001`. The API listens on
+loopback and exits with a configuration or database connection error instead
+of falling back to in-memory or demo data.
+
+## API endpoints
+
+- `GET /api/health` reports whether MongoDB is connected.
+- `GET /api/auth/session` provides the current session and CSRF token.
+- `POST /api/auth/register`, `POST /api/auth/login`, and `POST /api/auth/logout`
+  manage the account session.
+- `GET /api/dashboard` and `GET /api/members` read data belonging to the
+  authenticated account.
+- `POST /api/groups` creates a group owned by the authenticated account.
+- `POST /api/groups/:groupId/members` adds a member only to an owned group.
+
+JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
 
 ## Validate
 
 ```sh
 npm test
+npm audit
 ```

@@ -3,6 +3,9 @@ import Icon from './Icon.jsx'
 
 function CreateGroupModal({ onClose, onCreate }) {
   const [name, setName] = useState('')
+  const [currency, setCurrency] = useState('USD')
+  const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -14,10 +17,20 @@ function CreateGroupModal({ onClose, onCreate }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     const trimmedName = name.trim()
-    if (trimmedName) onCreate(trimmedName)
+    if (!trimmedName) return
+
+    setError('')
+    setIsSaving(true)
+    try {
+      await onCreate(trimmedName, currency)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -33,17 +46,30 @@ function CreateGroupModal({ onClose, onCreate }) {
           <label htmlFor="group-name">Group name</label>
           <input
             id="group-name"
-            maxLength={60}
+            maxLength={80}
             onChange={(event) => setName(event.target.value)}
             placeholder="e.g. Neighborhood Savings Circle"
             ref={inputRef}
             required
             value={name}
           />
+          <label htmlFor="group-currency">Currency</label>
+          <select
+            id="group-currency"
+            onChange={(event) => setCurrency(event.target.value)}
+            value={currency}
+          >
+            <option value="USD">USD — US Dollar</option>
+            <option value="INR">INR — Indian Rupee</option>
+            <option value="KES">KES — Kenyan Shilling</option>
+            <option value="EUR">EUR — Euro</option>
+            <option value="GBP">GBP — Pound Sterling</option>
+          </select>
+          {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions">
-            <button className="button button-outline" onClick={onClose} type="button">Cancel</button>
-            <button className="button button-primary" disabled={!name.trim()} type="submit">
-              <Icon name="plus" size={17} /> Create group
+            <button className="button button-outline" disabled={isSaving} onClick={onClose} type="button">Cancel</button>
+            <button className="button button-primary" disabled={!name.trim() || isSaving} type="submit">
+              <Icon name="plus" size={17} /> {isSaving ? 'Creating…' : 'Create group'}
             </button>
           </div>
         </form>

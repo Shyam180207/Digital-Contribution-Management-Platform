@@ -1,6 +1,6 @@
 import Avatar from './Avatar.jsx'
 import Icon from './Icon.jsx'
-import { formatCurrency } from '../data/dashboard.js'
+import { formatCurrency, formatRelativeTime } from '../data/dashboard.js'
 
 function ActivityFeed({ items, compact = false, onViewAll }) {
   return (
@@ -19,11 +19,11 @@ function ActivityFeed({ items, compact = false, onViewAll }) {
               <Avatar initials={item.initials} color={item.color} />
               <div className="activity-copy">
                 <p><strong>{item.name}</strong> {item.action}</p>
-                <span>{item.group} <i>·</i> {item.time}</span>
+                <span>{item.group} <i>·</i> {formatRelativeTime(item.createdAt)}</span>
               </div>
-              {item.amount !== null && (
+                {item.amountMinor !== null && (
                 <strong className={`activity-amount ${item.kind === 'Payout' ? 'payout' : ''}`}>
-                  {item.kind === 'Payout' ? '−' : '+'}{formatCurrency(item.amount)}
+                    {item.kind === 'Payout' ? '−' : '+'}{formatCurrency(item.amountMinor, item.currency)}
                 </strong>
               )}
             </li>

@@ -7,7 +7,7 @@ const navigation = [
   { id: 'activity', label: 'Activity', icon: 'activity' },
 ]
 
-function Sidebar({ activePage, onNavigate }) {
+function Sidebar({ activePage, onNavigate, user, onLogout }) {
   return (
     <aside className="sidebar">
       <a className="brand" href="#overview" onClick={() => onNavigate('overview')} aria-label="CommonFund home">
@@ -18,7 +18,7 @@ function Sidebar({ activePage, onNavigate }) {
       <div className="workspace-switcher">
         <span className="workspace-avatar">S</span>
         <span className="workspace-copy">
-          <strong>Shyam’s workspace</strong>
+          <strong>{user.username}’s workspace</strong>
           <small>Personal account</small>
         </span>
         <Icon name="chevronDown" size={16} />
@@ -50,9 +50,13 @@ function Sidebar({ activePage, onNavigate }) {
             Visit help center <Icon name="chevronRight" size={14} />
           </button>
         </div>
+        <button className="logout-button" onClick={onLogout} type="button">
+          <Icon name="logout" size={17} />
+          <span>Sign out</span>
+        </button>
         <button className="profile-button" type="button" aria-label="Account profile">
-          <span className="profile-avatar">SK</span>
-          <span className="profile-copy"><strong>Shyam Kumar</strong><small>Community admin</small></span>
+          <span className="profile-avatar">{user.username.slice(0, 2).toUpperCase()}</span>
+          <span className="profile-copy"><strong>{user.username}</strong><small>Community admin</small></span>
           <Icon name="chevronDown" size={16} />
         </button>
       </div>
