@@ -74,11 +74,18 @@ of falling back to in-memory or demo data.
   transaction's member, kind, amount, and note within an owned group.
 - `DELETE /api/groups/:groupId/transactions/:transactionId` deletes a
   transaction only when it belongs to a group owned by the signed-in user.
+- `POST`, `GET`, and `DELETE /api/groups/:groupId/transactions/:transactionId/receipt`
+  upload, download, or remove a receipt for a transaction in an owned group.
+  Receipts are limited to 5 MB and PDF, JPEG, PNG, or WebP; downloads are
+  authenticated and sent as attachments.
 
 JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
 The authentication cookie is HttpOnly, SameSite=Lax, and Secure in production.
 JWTs expire after one hour; users can refresh the session endpoint to validate
 the current token and retrieve their user profile.
+Receipt files are stored under `server/uploads/receipts` by default, which is
+excluded from version control. Set `RECEIPT_STORAGE_DIR` to use a persistent
+storage volume in deployment.
 
 ## Validate
 

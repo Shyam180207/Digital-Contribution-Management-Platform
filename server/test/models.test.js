@@ -91,6 +91,30 @@ test('Transaction validates references, kind, and positive integer minor-unit am
   assert.equal(error.errors.kind.kind, 'enum')
 })
 
+test('Transaction receipt metadata validates file names, types, and size limits', async () => {
+  const transaction = new Transaction({
+    group: objectId(),
+    member: objectId(),
+    createdBy: objectId(),
+    kind: 'contribution',
+    amountMinor: 2500,
+    receipt: {
+      storageKey: `${new mongoose.Types.ObjectId()}.png`,
+      originalName: 'receipt.png',
+      mimeType: 'image/png',
+      size: 128,
+      uploadedAt: new Date(),
+    },
+  })
+
+  await transaction.validate()
+  transaction.receipt.mimeType = 'text/html'
+  transaction.receipt.size = 6 * 1024 * 1024
+  const error = await getValidationError(transaction)
+  assert.ok(error.errors['receipt.mimeType'])
+  assert.ok(error.errors['receipt.size'])
+})
+
 test('model collections and query indexes are declared', () => {
   assert.equal(User.collection.collectionName, 'users')
   assert.equal(SavingsGroup.collection.collectionName, 'savings_groups')

@@ -1,4 +1,4 @@
-async function request(path, { method = 'GET', body, csrfToken, signal } = {}) {
+async function request(path, { method = 'GET', body, formData, csrfToken, signal } = {}) {
   let response
   try {
     response = await fetch(path, {
@@ -9,7 +9,7 @@ async function request(path, { method = 'GET', body, csrfToken, signal } = {}) {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(formData ? { body: formData } : body ? { body: JSON.stringify(body) } : {}),
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error
@@ -64,6 +64,23 @@ export function updateTransaction(groupId, transactionId, transaction, csrfToken
 
 export function deleteTransaction(groupId, transactionId, csrfToken) {
   return request(`/api/groups/${groupId}/transactions/${transactionId}`, {
+    method: 'DELETE',
+    csrfToken,
+  })
+}
+
+export function uploadTransactionReceipt(groupId, transactionId, file, csrfToken) {
+  const formData = new FormData()
+  formData.append('receipt', file)
+  return request(`/api/groups/${groupId}/transactions/${transactionId}/receipt`, {
+    method: 'POST',
+    formData,
+    csrfToken,
+  })
+}
+
+export function deleteTransactionReceipt(groupId, transactionId, csrfToken) {
+  return request(`/api/groups/${groupId}/transactions/${transactionId}/receipt`, {
     method: 'DELETE',
     csrfToken,
   })

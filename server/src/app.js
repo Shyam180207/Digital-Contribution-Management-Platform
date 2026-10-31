@@ -1,8 +1,13 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import cookieParser from 'cookie-parser'
+import { fileTypeFromBuffer } from 'file-type'
 import express from 'express'
 import { OAuth2Client } from 'google-auth-library'
+import multer from 'multer'
 import mongoose from 'mongoose'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createDataStore } from './dataStore.js'
 import { HttpError } from './httpError.js'
 import { hashPassword, verifyPassword } from './passwords.js'
@@ -21,6 +26,24 @@ const accessTokenCookie = 'commonfund.token'
 const csrfCookie = 'commonfund.csrf'
 const googleStateCookie = 'commonfund.google-state'
 const googleStateLifetimeSeconds = 10 * 60
+const receiptMaximumSize = 5 * 1024 * 1024
+const receiptFileExtensions = new Map([
+  ['application/pdf', 'pdf'],
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+])
+const receiptStorageKeyPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|pdf|png|webp)$/i
+const uploadReceipt = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: receiptMaximumSize, files: 1 },
+  fileFilter(_req, file, callback) {
+    if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      return callback(new HttpError(400, 'Receipts must be a PDF, JPEG, PNG, or WebP file.'))
+    }
+    return callback(null, true)
+  },
+})
 
 function cookieOptions(secure) {
   return { path: '/', sameSite: 'lax', secure }
@@ -63,6 +86,73 @@ async function findOrCreateGoogleUser(UserModel, subject) {
   }
 }
 
+function getReceiptFilePath(storageDir, storageKey) {
+  if (typeof storageKey !== 'string' || !receiptStorageKeyPattern.test(storageKey)) {
+    throw new HttpError(404, 'Receipt not found.')
+  }
+  return join(storageDir, storageKey)
+}
+
+async function removeReceiptFile(storageDir, storageKey) {
+  if (!storageKey) return
+  try {
+    await unlink(getReceiptFilePath(storageDir, storageKey))
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+}
+
+async function storeTransactionReceipt(dataStore, storageDir, userId, groupId, transactionId, file) {
+  const detectedType = await fileTypeFromBuffer(file.buffer)
+  const extension = receiptFileExtensions.get(detectedType?.mime)
+  if (!detectedType || !extension) {
+    throw new HttpError(400, 'The uploaded file must contain a valid PDF, JPEG, PNG, or WebP receipt.')
+  }
+
+  const originalName = basename(file.originalname.replaceAll('\\', '/'))
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 120) || `receipt.${extension}`
+  const receipt = {
+    storageKey: `${randomUUID()}.${extension}`,
+    originalName,
+    mimeType: detectedType.mime,
+    size: file.size,
+    uploadedAt: new Date(),
+  }
+  const filePath = getReceiptFilePath(storageDir, receipt.storageKey)
+
+  await mkdir(storageDir, { recursive: true })
+  await writeFile(filePath, file.buffer, { flag: 'wx' })
+
+  let previousReceipt
+  try {
+    previousReceipt = await dataStore.setTransactionReceipt(
+      userId,
+      groupId,
+      transactionId,
+      receipt,
+    )
+  } catch (error) {
+    try {
+      await removeReceiptFile(storageDir, receipt.storageKey)
+    } catch (cleanupError) {
+      console.error('New receipt file could not be removed after a failed database update:', cleanupError)
+    }
+    throw error
+  }
+
+  if (previousReceipt?.storageKey) {
+    try {
+      await removeReceiptFile(storageDir, previousReceipt.storageKey)
+    } catch (error) {
+      console.error('Previous receipt file could not be removed after replacement:', error)
+    }
+  }
+
+  return { receipt, previousReceipt }
+}
+
 function clearAuthenticationCookies(res, secure) {
   res.clearCookie(accessTokenCookie, { ...cookieOptions(secure), httpOnly: true })
   res.clearCookie(csrfCookie, cookieOptions(secure))
@@ -98,6 +188,16 @@ function csrfMatches(expected, actual) {
 function requireCsrf(req, res, next) {
   if (!csrfMatches(req.cookies[csrfCookie], req.get('x-csrf-token'))) {
     return res.status(403).json({ error: 'Your CSRF token is missing or expired. Refresh and try again.' })
+  }
+  return next()
+}
+
+function validateTransactionPath(req, _res, next) {
+  if (!mongoose.isValidObjectId(req.params.groupId)) {
+    return next(new HttpError(400, 'Invalid group ID.'))
+  }
+  if (!mongoose.isValidObjectId(req.params.transactionId)) {
+    return next(new HttpError(400, 'Invalid transaction ID.'))
   }
   return next()
 }
@@ -182,6 +282,8 @@ export function createApp({
   googleClientSecret = process.env.GOOGLE_CLIENT_SECRET,
   googleRedirectUri = process.env.GOOGLE_REDIRECT_URI,
   googleOAuthClient,
+  receiptStorageDir = process.env.RECEIPT_STORAGE_DIR
+    ?? fileURLToPath(new URL('../uploads/receipts/', import.meta.url)),
 } = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.length < 32) {
     throw new Error('JWT_SECRET must contain at least 32 characters.')
@@ -425,17 +527,88 @@ export function createApp({
   app.delete('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     if (!mongoose.isValidObjectId(req.params.transactionId)) throw new HttpError(400, 'Invalid transaction ID.')
-    await dataStore.deleteTransaction(
+    const deleted = await dataStore.deleteTransaction(
       req.userId,
       req.params.groupId,
       req.params.transactionId,
     )
+    if (deleted?.receipt?.storageKey) {
+      try {
+        await removeReceiptFile(receiptStorageDir, deleted.receipt.storageKey)
+      } catch (error) {
+        console.error('Receipt file could not be removed after transaction deletion:', error)
+      }
+    }
+    return res.sendStatus(204)
+  })
+
+  app.post('/api/groups/:groupId/transactions/:transactionId/receipt', requireCsrf, requireAuth, validateTransactionPath, uploadReceipt.single('receipt'), async (req, res) => {
+    if (!req.file) throw new HttpError(400, 'Choose a receipt file to upload.')
+
+    const { receipt, previousReceipt } = await storeTransactionReceipt(
+      dataStore,
+      receiptStorageDir,
+      req.userId,
+      req.params.groupId,
+      req.params.transactionId,
+      req.file,
+    )
+    return res.status(previousReceipt ? 200 : 201).json({
+      receipt: {
+        fileName: receipt.originalName,
+        mimeType: receipt.mimeType,
+        size: receipt.size,
+      },
+    })
+  })
+
+  app.get('/api/groups/:groupId/transactions/:transactionId/receipt', requireAuth, validateTransactionPath, async (req, res) => {
+    const receipt = await dataStore.getTransactionReceipt(
+      req.userId,
+      req.params.groupId,
+      req.params.transactionId,
+    )
+    if (!receipt || !receiptFileExtensions.has(receipt.mimeType)) {
+      throw new HttpError(404, 'Receipt not found.')
+    }
+    let contents
+    try {
+      contents = await readFile(getReceiptFilePath(receiptStorageDir, receipt.storageKey))
+    } catch (error) {
+      if (error.code === 'ENOENT') throw new HttpError(404, 'Receipt file not found.')
+      throw error
+    }
+    res.attachment(receipt.originalName)
+    res.type(receipt.mimeType)
+    res.set('X-Content-Type-Options', 'nosniff')
+    return res.send(contents)
+  })
+
+  app.delete('/api/groups/:groupId/transactions/:transactionId/receipt', requireCsrf, requireAuth, validateTransactionPath, async (req, res) => {
+    const receipt = await dataStore.clearTransactionReceipt(
+      req.userId,
+      req.params.groupId,
+      req.params.transactionId,
+    )
+    if (receipt?.storageKey) {
+      try {
+        await removeReceiptFile(receiptStorageDir, receipt.storageKey)
+      } catch (error) {
+        console.error('Receipt file could not be removed after detaching it:', error)
+      }
+    }
     return res.sendStatus(204)
   })
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }))
 
   app.use((error, _req, res, _next) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Receipt files must be 5 MB or smaller.' })
+      }
+      return res.status(400).json({ error: 'Upload one receipt file at a time.' })
+    }
     if (error instanceof HttpError) {
       return res.status(error.status).json({ error: error.message })
     }

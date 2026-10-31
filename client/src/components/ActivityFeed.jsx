@@ -26,6 +26,16 @@ function ActivityFeed({ items, compact = false, onViewAll, onEdit, onDelete }) {
                   {item.kind === 'Payout' ? '−' : '+'}{formatCurrency(item.amountMinor, item.currency)}
                 </strong>
               )}
+              {item.receipt && (
+                <a
+                  aria-label={`Download receipt for ${item.name}`}
+                  className="activity-receipt"
+                  download
+                  href={`/api/groups/${item.groupId}/transactions/${item.id}/receipt`}
+                >
+                  Receipt
+                </a>
+              )}
               {!compact && onEdit && onDelete && (
                 <div className="activity-actions">
                   <button

@@ -181,6 +181,12 @@ export function createDataStore({
           kind: transaction.kind === 'payout' ? 'Payout' : 'Contribution',
           initials: initials(transaction.member?.name),
           color: avatarColors[index % avatarColors.length],
+          receipt: transaction.receipt
+            ? {
+                fileName: transaction.receipt.originalName,
+                mimeType: transaction.receipt.mimeType,
+              }
+            : null,
         })),
         chart: { labels: chartLabels, values: chartValues },
       }
@@ -292,7 +298,43 @@ export function createDataStore({
         group: group._id,
       }).lean()
       if (!transaction) throw new HttpError(404, 'Transaction not found in this group.')
-      return { id: String(transaction._id) }
+      return transaction.receipt
+        ? { id: String(transaction._id), receipt: transaction.receipt }
+        : { id: String(transaction._id) }
+    },
+
+    async setTransactionReceipt(userId, groupId, transactionId, receipt) {
+      const group = await getOwnedGroup(userId, groupId)
+      const transaction = await TransactionModel.findOneAndUpdate(
+        { _id: transactionId, group: group._id },
+        { $set: { receipt } },
+        { new: false, runValidators: true },
+      ).select('receipt').lean()
+      if (!transaction) throw new HttpError(404, 'Transaction not found in this group.')
+      return transaction.receipt ?? null
+    },
+
+    async getTransactionReceipt(userId, groupId, transactionId) {
+      const group = await getOwnedGroup(userId, groupId)
+      const transaction = await TransactionModel.findOne({
+        _id: transactionId,
+        group: group._id,
+      })
+        .select('receipt')
+        .lean()
+      if (!transaction?.receipt) throw new HttpError(404, 'Receipt not found.')
+      return transaction.receipt
+    },
+
+    async clearTransactionReceipt(userId, groupId, transactionId) {
+      const group = await getOwnedGroup(userId, groupId)
+      const transaction = await TransactionModel.findOneAndUpdate(
+        { _id: transactionId, group: group._id },
+        { $unset: { receipt: 1 } },
+        { new: false },
+      ).select('receipt').lean()
+      if (!transaction) throw new HttpError(404, 'Transaction not found in this group.')
+      return transaction.receipt ?? null
     },
 
     async listGroupMembers(userId, groupId) {
@@ -336,6 +378,12 @@ export function createDataStore({
         amountMinor: transaction.amountMinor,
         note: transaction.note,
         createdAt: transaction.createdAt,
+        receipt: transaction.receipt
+          ? {
+              fileName: transaction.receipt.originalName,
+              mimeType: transaction.receipt.mimeType,
+            }
+          : null,
       }))
     },
 

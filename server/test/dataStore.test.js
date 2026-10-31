@@ -190,6 +190,7 @@ test('transaction list limits results to the requesting user’s groups', async 
           amountMinor: 2500,
           note: 'Monthly contribution',
           createdAt: new Date('2026-10-30T12:00:00Z'),
+          receipt: null,
         }])
       },
     },
@@ -209,6 +210,7 @@ test('transaction list limits results to the requesting user’s groups', async 
     amountMinor: 2500,
     note: 'Monthly contribution',
     createdAt: new Date('2026-10-30T12:00:00Z'),
+    receipt: null,
   }])
 })
 
@@ -537,4 +539,81 @@ test('transaction deletion does not delete records from groups the user does not
     { status: 404 },
   )
   assert.equal(transactionDeleteCalled, false)
+})
+
+test('receipt reads and updates are scoped through the owned group and transaction', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const previousReceipt = { storageKey: 'old-key.png', originalName: 'old.png' }
+  const receipt = { storageKey: 'new-key.pdf', originalName: 'new.pdf' }
+  const seenQueries = []
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        seenQueries.push(['group', filter])
+        return query({ _id: groupId })
+      },
+    },
+    TransactionModel: {
+      findOneAndUpdate(filter, update, options) {
+        seenQueries.push(['update', filter, update, options])
+        return query({ receipt: previousReceipt })
+      },
+      findOne(filter) {
+        seenQueries.push(['findReceipt', filter])
+        return query({ receipt })
+      },
+    },
+  })
+
+  assert.deepEqual(
+    await store.setTransactionReceipt(ownerId, groupId, transactionId, receipt),
+    previousReceipt,
+  )
+  assert.deepEqual(
+    await store.getTransactionReceipt(ownerId, groupId, transactionId),
+    receipt,
+  )
+  assert.deepEqual(
+    await store.clearTransactionReceipt(ownerId, groupId, transactionId),
+    previousReceipt,
+  )
+  assert.deepEqual(seenQueries, [
+    ['group', { _id: groupId, owner: ownerId }],
+    ['update', { _id: transactionId, group: groupId }, { $set: { receipt } }, { new: false, runValidators: true }],
+    ['group', { _id: groupId, owner: ownerId }],
+    ['findReceipt', { _id: transactionId, group: groupId }],
+    ['group', { _id: groupId, owner: ownerId }],
+    ['update', { _id: transactionId, group: groupId }, { $unset: { receipt: 1 } }, { new: false }],
+  ])
+})
+
+test('receipt operations refuse groups not owned by the requesting user', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  let transactionQueryCalled = false
+  const store = createDataStore({
+    GroupModel: { findOne: () => query(null) },
+    TransactionModel: {
+      findOneAndUpdate() {
+        transactionQueryCalled = true
+        return query(null)
+      },
+      findOne() {
+        transactionQueryCalled = true
+        return query(null)
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.getTransactionReceipt(ownerId, groupId, new mongoose.Types.ObjectId()),
+    { status: 404 },
+  )
+  await assert.rejects(
+    store.setTransactionReceipt(ownerId, groupId, new mongoose.Types.ObjectId(), {}),
+    { status: 404 },
+  )
+  assert.equal(transactionQueryCalled, false)
 })
