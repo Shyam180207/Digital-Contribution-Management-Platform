@@ -35,8 +35,13 @@ of falling back to in-memory or demo data.
 - `GET /api/auth/session` provides the current session and CSRF token.
 - `POST /api/auth/register`, `POST /api/auth/login`, and `POST /api/auth/logout`
   manage the account session.
-- `GET /api/dashboard` and `GET /api/members` read data belonging to the
-  authenticated account.
+- `GET /api/dashboard`, `GET /api/groups`, and `GET /api/members` read data
+  belonging to the authenticated account.
+- `GET /api/groups/:groupId/members` and
+  `GET /api/groups/:groupId/transactions` read records from a group owned by
+  the authenticated account.
+- `GET /api/transactions` lists transactions across the authenticated
+  account's groups.
 - `POST /api/groups` creates a group owned by the authenticated account.
 - `POST /api/groups/:groupId/members` adds a member only to an owned group.
 

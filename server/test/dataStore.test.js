@@ -94,3 +94,138 @@ test('dashboard reads only groups owned by the requesting account', async () => 
   assert.equal(dashboard.activities[0].amountMinor, 2500)
   assert.equal(dashboard.chart.labels.length, 7)
 })
+
+test('group list returns only records owned by the requesting account', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  let seenFilter
+  const store = createDataStore({
+    GroupModel: {
+      find(filter) {
+        seenFilter = filter
+        return query([{
+          _id: groupId,
+          name: 'Garden Circle',
+          currency: 'INR',
+          createdAt: new Date('2026-10-30T12:00:00Z'),
+        }])
+      },
+    },
+  })
+
+  assert.deepEqual(await store.listGroups(ownerId), [{
+    id: String(groupId),
+    name: 'Garden Circle',
+    currency: 'INR',
+    createdAt: new Date('2026-10-30T12:00:00Z'),
+  }])
+  assert.deepEqual(seenFilter, { owner: ownerId })
+})
+
+test('group member list verifies ownership before reading member records', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const memberId = new mongoose.Types.ObjectId()
+  const seenQueries = []
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        seenQueries.push(['group', filter])
+        return query({ _id: groupId })
+      },
+    },
+    MemberModel: {
+      find(filter) {
+        seenQueries.push(['members', filter])
+        return query([{
+          _id: memberId,
+          name: 'Aarav Sharma',
+          phone: '555-0101',
+          createdAt: new Date('2026-10-30T12:00:00Z'),
+        }])
+      },
+    },
+  })
+
+  const members = await store.listGroupMembers(ownerId, groupId)
+
+  assert.deepEqual(seenQueries, [
+    ['group', { _id: groupId, owner: ownerId }],
+    ['members', { group: groupId }],
+  ])
+  assert.deepEqual(members, [{
+    id: String(memberId),
+    name: 'Aarav Sharma',
+    phone: '555-0101',
+    createdAt: new Date('2026-10-30T12:00:00Z'),
+  }])
+})
+
+test('transaction list limits results to the requesting user’s groups', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const memberId = new mongoose.Types.ObjectId()
+  const seenQueries = []
+  const store = createDataStore({
+    GroupModel: {
+      find(filter) {
+        seenQueries.push(['groups', filter])
+        return query([{ _id: groupId }])
+      },
+    },
+    TransactionModel: {
+      find(filter) {
+        seenQueries.push(['transactions', filter])
+        return query([{
+          _id: transactionId,
+          group: { _id: groupId, name: 'Garden Circle', currency: 'INR' },
+          member: { _id: memberId, name: 'Aarav Sharma' },
+          kind: 'contribution',
+          amountMinor: 2500,
+          note: 'Monthly contribution',
+          createdAt: new Date('2026-10-30T12:00:00Z'),
+        }])
+      },
+    },
+  })
+
+  const transactions = await store.listTransactions(ownerId)
+
+  assert.deepEqual(seenQueries, [
+    ['groups', { owner: ownerId }],
+    ['transactions', { group: { $in: [groupId] } }],
+  ])
+  assert.deepEqual(transactions, [{
+    id: String(transactionId),
+    group: { id: String(groupId), name: 'Garden Circle', currency: 'INR' },
+    member: { id: String(memberId), name: 'Aarav Sharma' },
+    kind: 'contribution',
+    amountMinor: 2500,
+    note: 'Monthly contribution',
+    createdAt: new Date('2026-10-30T12:00:00Z'),
+  }])
+})
+
+test('group transaction list refuses access to a group not owned by the user', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  let transactionQueryCalled = false
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        assert.deepEqual(filter, { _id: groupId, owner: ownerId })
+        return query(null)
+      },
+    },
+    TransactionModel: {
+      find() {
+        transactionQueryCalled = true
+        return query([])
+      },
+    },
+  })
+
+  await assert.rejects(store.listTransactions(ownerId, groupId), { status: 404 })
+  assert.equal(transactionQueryCalled, false)
+})

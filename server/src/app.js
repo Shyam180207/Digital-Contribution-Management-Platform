@@ -177,8 +177,26 @@ export function createApp({
     return res.json(await dataStore.getDashboard(req.session.userId))
   })
 
+  app.get('/api/groups', requireAuthentication, async (req, res) => {
+    return res.json(await dataStore.listGroups(req.session.userId))
+  })
+
   app.get('/api/members', requireAuthentication, async (req, res) => {
     return res.json(await dataStore.listMembers(req.session.userId))
+  })
+
+  app.get('/api/groups/:groupId/members', requireAuthentication, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
+    return res.json(await dataStore.listGroupMembers(req.session.userId, req.params.groupId))
+  })
+
+  app.get('/api/transactions', requireAuthentication, async (req, res) => {
+    return res.json(await dataStore.listTransactions(req.session.userId))
+  })
+
+  app.get('/api/groups/:groupId/transactions', requireAuthentication, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
+    return res.json(await dataStore.listTransactions(req.session.userId, req.params.groupId))
   })
 
   app.post('/api/groups', requireCsrf, requireAuthentication, async (req, res) => {

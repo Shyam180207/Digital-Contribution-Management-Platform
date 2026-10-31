@@ -35,7 +35,27 @@ export function createDataStore({
     return groups.map((group) => group._id)
   }
 
+  async function getOwnedGroup(userId, groupId) {
+    const group = await GroupModel.findOne({ _id: groupId, owner: userId })
+      .select('_id')
+      .lean()
+    if (!group) throw new HttpError(404, 'Group not found.')
+    return group
+  }
+
   return {
+    async listGroups(userId) {
+      const groups = await GroupModel.find({ owner: userId })
+        .sort({ createdAt: -1 })
+        .lean()
+      return groups.map((group) => ({
+        id: String(group._id),
+        name: group.name,
+        currency: group.currency,
+        createdAt: group.createdAt,
+      }))
+    },
+
     async getDashboard(userId, now = new Date()) {
       const groups = await GroupModel.find({ owner: userId })
         .sort({ createdAt: -1 })
@@ -176,10 +196,7 @@ export function createDataStore({
     },
 
     async createMember(userId, groupId, memberData) {
-      const group = await GroupModel.findOne({ _id: groupId, owner: userId })
-        .select('_id')
-        .lean()
-      if (!group) throw new HttpError(404, 'Group not found.')
+      const group = await getOwnedGroup(userId, groupId)
 
       const member = await MemberModel.create({ ...memberData, group: group._id })
       return {
@@ -189,6 +206,50 @@ export function createDataStore({
         group: String(group._id),
         joined: member.createdAt,
       }
+    },
+
+    async listGroupMembers(userId, groupId) {
+      const group = await getOwnedGroup(userId, groupId)
+      const members = await MemberModel.find({ group: group._id })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean()
+      return members.map((member) => ({
+        id: String(member._id),
+        name: member.name,
+        phone: member.phone,
+        createdAt: member.createdAt,
+      }))
+    },
+
+    async listTransactions(userId, groupId) {
+      const groupIds = groupId
+        ? [(await getOwnedGroup(userId, groupId))._id]
+        : await getOwnedGroupIds(userId)
+      const transactions = await TransactionModel.find({ group: { $in: groupIds } })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .populate('member', 'name')
+        .populate('group', 'name currency')
+        .lean()
+
+      return transactions.map((transaction) => ({
+        id: String(transaction._id),
+        group: transaction.group
+          ? {
+              id: String(transaction.group._id),
+              name: transaction.group.name,
+              currency: transaction.group.currency,
+            }
+          : null,
+        member: transaction.member
+          ? { id: String(transaction.member._id), name: transaction.member.name }
+          : null,
+        kind: transaction.kind,
+        amountMinor: transaction.amountMinor,
+        note: transaction.note,
+        createdAt: transaction.createdAt,
+      }))
     },
 
     async listMembers(userId) {

@@ -43,6 +43,10 @@ function createTestUserModel() {
 function createTestApp(overrides = {}) {
   const calls = []
   const dataStore = {
+    async listGroups(userId) {
+      calls.push(['listGroups', userId])
+      return []
+    },
     async getDashboard(userId) {
       calls.push(['getDashboard', userId])
       return {
@@ -52,6 +56,18 @@ function createTestApp(overrides = {}) {
         activities: [],
         chart: { labels: [], values: [] },
       }
+    },
+    async listGroupMembers(userId, groupId) {
+      calls.push(['listGroupMembers', userId, groupId])
+      return []
+    },
+    async listTransactions(userId, groupId) {
+      calls.push(['listTransactions', userId, groupId])
+      return []
+    },
+    async listMembers(userId) {
+      calls.push(['listMembers', userId])
+      return []
     },
     async createGroup(userId, groupData) {
       calls.push(['createGroup', userId, groupData])
@@ -81,7 +97,51 @@ test('protected dashboard reads require an authenticated session', async () => {
   const { app, calls } = createTestApp()
 
   await request(app).get('/api/dashboard').expect(401)
+  await request(app).get('/api/groups').expect(401)
+  await request(app).get('/api/groups/507f1f77bcf86cd799439011/members').expect(401)
+  await request(app).get('/api/transactions').expect(401)
+  await request(app).get('/api/groups/507f1f77bcf86cd799439011/transactions').expect(401)
   assert.equal(calls.length, 0)
+})
+
+test('GET resource endpoints pass the authenticated owner and group to the datastore', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const csrfToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ username: 'get_routes', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+
+  await agent.get('/api/groups').expect(200, [])
+  await agent.get(`/api/groups/${groupId}/members`).expect(200, [])
+  await agent.get('/api/transactions').expect(200, [])
+  await agent.get(`/api/groups/${groupId}/transactions`).expect(200, [])
+
+  assert.deepEqual(calls, [
+    ['listGroups', registration.body.user.id],
+    ['listGroupMembers', registration.body.user.id, groupId],
+    ['listTransactions', registration.body.user.id, undefined],
+    ['listTransactions', registration.body.user.id, groupId],
+  ])
+})
+
+test('group resource GET endpoints reject malformed IDs', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const csrfToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ username: 'invalid_get_id', password: 'a-secure-test-password' })
+    .expect(201)
+
+  await agent.get('/api/groups/not-an-object-id/members').expect(400)
+  await agent.get('/api/groups/not-an-object-id/transactions').expect(400)
+  assert.deepEqual(calls, [])
+  assert.ok(registration.body.user.id)
 })
 
 test('registration authenticates and dashboard reads are scoped to that user', async () => {
