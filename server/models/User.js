@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema(
 )
 
 userSchema.index({ username: 1 }, { unique: true })
+userSchema.virtual('groups', {
+  ref: 'SavingsGroup',
+  localField: '_id',
+  foreignField: 'owner',
+})
 
 const User = mongoose.models.User || mongoose.model('User', userSchema)
 

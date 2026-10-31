@@ -28,6 +28,16 @@ const savingsGroupSchema = new mongoose.Schema(
 )
 
 savingsGroupSchema.index({ owner: 1 })
+savingsGroupSchema.virtual('members', {
+  ref: 'Member',
+  localField: '_id',
+  foreignField: 'group',
+})
+savingsGroupSchema.virtual('transactions', {
+  ref: 'Transaction',
+  localField: '_id',
+  foreignField: 'group',
+})
 
 const SavingsGroup = mongoose.models.SavingsGroup
   || mongoose.model('SavingsGroup', savingsGroupSchema)

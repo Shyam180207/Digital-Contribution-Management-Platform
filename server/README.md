@@ -6,6 +6,16 @@ group and member writes. Each dashboard query is scoped to the signed-in user.
 Sessions are stored in MongoDB, passwords are hashed with Node's `scrypt`, and
 state-changing requests require the session's CSRF token.
 
+## Data relationships
+
+MongoDB documents use Mongoose `ObjectId` references: a user owns savings
+groups, each group contains members and transactions, and each transaction
+references its group, member, and creating user. The models expose inverse
+`groups`, `members`, and `transactions` virtuals for population without
+duplicating relationship IDs. API write operations verify group ownership and
+that a transaction's member belongs to the same group; MongoDB references are
+not foreign keys and do not enforce those checks by themselves.
+
 ## Configure and run
 
 1. Start a MongoDB instance.
