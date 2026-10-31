@@ -1,0 +1,11 @@
+{
+  "name": "commonfund-models",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mongoose": "^9.11.4"
+  }
+}
