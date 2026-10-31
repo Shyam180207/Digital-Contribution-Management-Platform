@@ -3,8 +3,9 @@
 The Express API uses MongoDB through the Mongoose models in `models/`. It
 provides account registration and login, an authenticated dashboard read, and
 group and member writes. Each dashboard query is scoped to the signed-in user.
-Sessions are stored in MongoDB, passwords are hashed with Node's `scrypt`, and
-state-changing requests require the session's CSRF token.
+Authentication uses short-lived JWTs in HttpOnly cookies. CSRF protection uses
+a separate readable cookie and requires its value in the `X-CSRF-Token` header
+for state-changing requests. Passwords are hashed with Node's `scrypt`.
 Usernames are case-insensitive, and passwords must contain 10–128 characters.
 
 ## Data relationships
@@ -20,7 +21,8 @@ not foreign keys and do not enforce those checks by themselves.
 ## Configure and run
 
 1. Start a MongoDB instance.
-2. Copy `.env.example` to `.env` and set a long, random `SESSION_SECRET`.
+2. Copy `.env.example` to `.env` and set a strong, random `JWT_SECRET` of at
+   least 32 characters. Keep it private; changing it invalidates issued tokens.
 3. Install and start the API:
 
    ```sh
@@ -43,9 +45,9 @@ of falling back to in-memory or demo data.
 ## API endpoints
 
 - `GET /api/health` reports whether MongoDB is connected.
-- `GET /api/auth/session` provides the current session and CSRF token.
+- `GET /api/auth/session` provides the current user and CSRF token.
 - `POST /api/auth/register`, `POST /api/auth/login`, and `POST /api/auth/logout`
-  manage the account session.
+  manage authentication using JWT cookies. The token is not returned in JSON.
 - `GET /api/dashboard`, `GET /api/groups`, and `GET /api/members` read data
   belonging to the authenticated account.
 - `GET /api/groups/:groupId/members` and
@@ -64,6 +66,9 @@ of falling back to in-memory or demo data.
   transaction only when it belongs to a group owned by the signed-in user.
 
 JSON writes require an `X-CSRF-Token` header from the auth session endpoint.
+The authentication cookie is HttpOnly, SameSite=Lax, and Secure in production.
+JWTs expire after one hour; users can refresh the session endpoint to validate
+the current token and retrieve their user profile.
 
 ## Validate
 
