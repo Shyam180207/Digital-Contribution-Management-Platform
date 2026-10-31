@@ -245,6 +245,18 @@ export function createApp({
     return res.status(201).json({ transaction })
   })
 
+  app.put('/api/groups/:groupId/transactions/:transactionId', requireCsrf, requireAuthentication, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
+    if (!mongoose.isValidObjectId(req.params.transactionId)) throw new HttpError(400, 'Invalid transaction ID.')
+    const transaction = await dataStore.updateTransaction(
+      req.session.userId,
+      req.params.groupId,
+      req.params.transactionId,
+      validateTransactionInput(req.body ?? {}),
+    )
+    return res.json({ transaction })
+  })
+
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }))
 
   app.use((error, _req, res, _next) => {

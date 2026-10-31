@@ -352,3 +352,133 @@ test('transaction creation rejects a member from another group', async () => {
   )
   assert.equal(transactionCreateCalled, false)
 })
+
+test('transaction update scopes the write to an owned group and applies validated fields', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const memberId = new mongoose.Types.ObjectId()
+  const seenQueries = []
+  const updatedTransaction = {
+    _id: transactionId,
+    kind: 'payout',
+    amountMinor: 3000,
+    note: 'Updated payout',
+    createdAt: new Date('2026-10-30T12:00:00Z'),
+  }
+  const store = createDataStore({
+    GroupModel: {
+      findOne(filter) {
+        seenQueries.push(['group', filter])
+        return query({
+          _id: groupId,
+          name: 'Garden Circle',
+          currency: 'INR',
+        })
+      },
+    },
+    MemberModel: {
+      findOne(filter) {
+        seenQueries.push(['member', filter])
+        return query({ _id: memberId, name: 'Aarav Sharma' })
+      },
+    },
+    TransactionModel: {
+      findOneAndUpdate(filter, update, options) {
+        seenQueries.push(['update', filter, update, options])
+        return query(updatedTransaction)
+      },
+    },
+  })
+
+  const transaction = await store.updateTransaction(ownerId, groupId, transactionId, {
+    memberId,
+    kind: 'payout',
+    amountMinor: 3000,
+    note: 'Updated payout',
+  })
+
+  assert.deepEqual(seenQueries, [
+    ['group', { _id: groupId, owner: ownerId }],
+    ['member', { _id: memberId, group: groupId }],
+    ['update', { _id: transactionId, group: groupId }, {
+      $set: {
+        member: memberId,
+        kind: 'payout',
+        amountMinor: 3000,
+        note: 'Updated payout',
+      },
+    }, { new: true, runValidators: true }],
+  ])
+  assert.deepEqual(transaction, {
+    id: String(transactionId),
+    group: { id: String(groupId), name: 'Garden Circle', currency: 'INR' },
+    member: { id: String(memberId), name: 'Aarav Sharma' },
+    kind: 'payout',
+    amountMinor: 3000,
+    note: 'Updated payout',
+    createdAt: updatedTransaction.createdAt,
+  })
+})
+
+test('transaction update refuses a transaction outside the owned group', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  const memberId = new mongoose.Types.ObjectId()
+  let transactionUpdateCalled = false
+  const store = createDataStore({
+    GroupModel: {
+      findOne: () => query({ _id: groupId, name: 'Garden Circle', currency: 'INR' }),
+    },
+    MemberModel: { findOne: () => query({ _id: memberId, name: 'Aarav Sharma' }) },
+    TransactionModel: {
+      findOneAndUpdate(filter) {
+        assert.deepEqual(filter, { _id: transactionId, group: groupId })
+        transactionUpdateCalled = true
+        return query(null)
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.updateTransaction(ownerId, groupId, transactionId, {
+      memberId,
+      kind: 'contribution',
+      amountMinor: 1250,
+      note: null,
+    }),
+    { status: 404 },
+  )
+  assert.equal(transactionUpdateCalled, true)
+})
+
+test('transaction update rejects members from a different group before writing', async () => {
+  const ownerId = new mongoose.Types.ObjectId()
+  const groupId = new mongoose.Types.ObjectId()
+  const transactionId = new mongoose.Types.ObjectId()
+  let transactionUpdateCalled = false
+  const store = createDataStore({
+    GroupModel: {
+      findOne: () => query({ _id: groupId, name: 'Garden Circle', currency: 'INR' }),
+    },
+    MemberModel: { findOne: () => query(null) },
+    TransactionModel: {
+      findOneAndUpdate() {
+        transactionUpdateCalled = true
+        return query(null)
+      },
+    },
+  })
+
+  await assert.rejects(
+    store.updateTransaction(ownerId, groupId, transactionId, {
+      memberId: new mongoose.Types.ObjectId(),
+      kind: 'contribution',
+      amountMinor: 1250,
+      note: null,
+    }),
+    { status: 404 },
+  )
+  assert.equal(transactionUpdateCalled, false)
+})

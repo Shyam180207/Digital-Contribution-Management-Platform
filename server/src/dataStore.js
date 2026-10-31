@@ -242,6 +242,45 @@ export function createDataStore({
       }
     },
 
+    async updateTransaction(userId, groupId, transactionId, transactionData) {
+      const group = await getOwnedGroup(userId, groupId)
+      const member = await MemberModel.findOne({
+        _id: transactionData.memberId,
+        group: group._id,
+      })
+        .select('_id name')
+        .lean()
+      if (!member) throw new HttpError(404, 'Member not found in this group.')
+
+      const transaction = await TransactionModel.findOneAndUpdate(
+        { _id: transactionId, group: group._id },
+        {
+          $set: {
+            member: member._id,
+            kind: transactionData.kind,
+            amountMinor: transactionData.amountMinor,
+            note: transactionData.note,
+          },
+        },
+        { new: true, runValidators: true },
+      ).lean()
+      if (!transaction) throw new HttpError(404, 'Transaction not found in this group.')
+
+      return {
+        id: String(transaction._id),
+        group: {
+          id: String(group._id),
+          name: group.name,
+          currency: group.currency,
+        },
+        member: { id: String(member._id), name: member.name },
+        kind: transaction.kind,
+        amountMinor: transaction.amountMinor,
+        note: transaction.note,
+        createdAt: transaction.createdAt,
+      }
+    },
+
     async listGroupMembers(userId, groupId) {
       const group = await getOwnedGroup(userId, groupId)
       const members = await MemberModel.find({ group: group._id })

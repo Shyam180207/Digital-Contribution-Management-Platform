@@ -81,6 +81,10 @@ function createTestApp(overrides = {}) {
       calls.push(['createTransaction', userId, groupId, transactionData])
       return { id: 'transaction-id', group: groupId, ...transactionData }
     },
+    async updateTransaction(userId, groupId, transactionId, transactionData) {
+      calls.push(['updateTransaction', userId, groupId, transactionId, transactionData])
+      return { id: transactionId, group: groupId, ...transactionData }
+    },
     ...overrides.dataStore,
   }
   const app = createApp({
@@ -109,6 +113,11 @@ test('protected dashboard reads require an authenticated session', async () => {
   await agent.get('/api/groups/507f1f77bcf86cd799439011/transactions').expect(401)
   await agent
     .post('/api/groups/507f1f77bcf86cd799439011/transactions')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ memberId: '507f1f77bcf86cd799439012', kind: 'contribution', amountMinor: 1250 })
+    .expect(401)
+  await agent
+    .put('/api/groups/507f1f77bcf86cd799439011/transactions/507f1f77bcf86cd799439013')
     .set('X-CSRF-Token', csrfToken)
     .send({ memberId: '507f1f77bcf86cd799439012', kind: 'contribution', amountMinor: 1250 })
     .expect(401)
@@ -319,6 +328,86 @@ test('transaction endpoint rejects invalid IDs, kinds, amounts, and notes before
     .post(`/api/groups/${groupId}/transactions`)
     .set(csrf)
     .send({ memberId, kind: 'payout', amountMinor: 100, note: 'x'.repeat(201) })
+    .expect(400)
+
+  assert.deepEqual(calls, [])
+})
+
+test('transaction PUT validates CSRF and sends only the replacement fields', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'transaction_editor', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const transactionId = new mongoose.Types.ObjectId().toString()
+  const memberId = new mongoose.Types.ObjectId().toString()
+  const path = `/api/groups/${groupId}/transactions/${transactionId}`
+  const body = {
+    memberId,
+    kind: 'payout',
+    amountMinor: 3000,
+    note: ' Updated payout ',
+    createdBy: 'forged-user',
+  }
+
+  await agent.put(path).send(body).expect(403)
+
+  const updated = await agent
+    .put(path)
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .send(body)
+    .expect(200)
+
+  assert.deepEqual(updated.body.transaction, {
+    id: transactionId,
+    group: groupId,
+    memberId,
+    kind: 'payout',
+    amountMinor: 3000,
+    note: 'Updated payout',
+  })
+  assert.deepEqual(calls, [[
+    'updateTransaction',
+    registration.body.user.id,
+    groupId,
+    transactionId,
+    { memberId, kind: 'payout', amountMinor: 3000, note: 'Updated payout' },
+  ]])
+})
+
+test('transaction PUT rejects malformed path IDs and invalid replacement data', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'invalid_update', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const transactionId = new mongoose.Types.ObjectId().toString()
+  const memberId = new mongoose.Types.ObjectId().toString()
+  const csrf = { 'X-CSRF-Token': registration.body.csrfToken }
+  const body = { memberId, kind: 'contribution', amountMinor: 1000 }
+
+  await agent
+    .put(`/api/groups/not-an-object-id/transactions/${transactionId}`)
+    .set(csrf)
+    .send(body)
+    .expect(400)
+  await agent
+    .put(`/api/groups/${groupId}/transactions/not-an-object-id`)
+    .set(csrf)
+    .send(body)
+    .expect(400)
+  await agent
+    .put(`/api/groups/${groupId}/transactions/${transactionId}`)
+    .set(csrf)
+    .send({ ...body, amountMinor: 0 })
     .expect(400)
 
   assert.deepEqual(calls, [])
