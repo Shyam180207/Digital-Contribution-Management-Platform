@@ -1,0 +1,19 @@
+meta {
+  name: Delete transaction
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions/{{transactionId}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+docs {
+  Permanently deletes the selected transaction and any stored receipt. Returns 204. Requires a signed-in session and the current CSRF token.
+}

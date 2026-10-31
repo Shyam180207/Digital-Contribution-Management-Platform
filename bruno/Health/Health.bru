@@ -1,0 +1,15 @@
+meta {
+  name: Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/health
+  body: none
+  auth: none
+}
+
+docs {
+  Checks whether the API can reach MongoDB. Returns 200 with status "ok" when connected, or 503 when unavailable.
+}

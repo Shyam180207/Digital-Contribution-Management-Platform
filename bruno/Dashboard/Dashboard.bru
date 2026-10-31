@@ -1,0 +1,15 @@
+meta {
+  name: Dashboard
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dashboard
+  body: none
+  auth: none
+}
+
+docs {
+  Returns the authenticated user's summary, groups, members, recent activity, and chart data. Requires a signed-in session.
+}

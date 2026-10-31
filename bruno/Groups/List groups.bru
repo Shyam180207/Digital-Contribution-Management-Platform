@@ -1,0 +1,15 @@
+meta {
+  name: List groups
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/groups
+  body: none
+  auth: none
+}
+
+docs {
+  Lists groups owned by the signed-in user.
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Create transaction
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "memberId": "{{memberId}}",
+    "kind": "contribution",
+    "amountMinor": 1250,
+    "note": "Example contribution"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.transaction?.id) bru.setEnvVar("transactionId", body.transaction.id);
+}
+
+docs {
+  Records a contribution or payout for a member in the selected group. kind must be contribution or payout; amountMinor is a positive integer in minor currency units (1250 is 12.50). The response stores the new transaction ID in the Local environment.
+}

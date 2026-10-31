@@ -1,0 +1,15 @@
+meta {
+  name: Google OAuth callback
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/auth/google/callback?code={{googleCode}}&state={{googleState}}
+  body: none
+  auth: none
+}
+
+docs {
+  Documents the callback path used by Google. Google supplies the one-time code and state and the API validates its state cookie; do not execute this template manually. The browser is redirected back to the client after sign-in.
+}
