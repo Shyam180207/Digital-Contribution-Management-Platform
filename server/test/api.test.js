@@ -263,6 +263,90 @@ test('CSRF protection requires the header to match the readable cookie', async (
     .expect(403)
 })
 
+test('AI transaction note suggestions require authentication, CSRF, and a valid kind', async () => {
+  const { app } = createTestApp({
+    appOptions: {
+      geminiApiKey: 'test-gemini-key',
+      transactionNoteGenerator: async () => 'Should not be called',
+    },
+  })
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+
+  await agent
+    .post('/api/ai/transaction-note')
+    .set('X-CSRF-Token', initialToken)
+    .send({ kind: 'contribution' })
+    .expect(401)
+
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'ai_note_auth', password: 'a-secure-test-password' })
+    .expect(201)
+
+  await agent
+    .post('/api/ai/transaction-note')
+    .send({ kind: 'contribution' })
+    .expect(403)
+  await agent
+    .post('/api/ai/transaction-note')
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .send({ kind: 'refund' })
+    .expect(400)
+})
+
+test('AI transaction note endpoint only sends transaction kind to the generator', async () => {
+  const generatedKinds = []
+  const { app } = createTestApp({
+    appOptions: {
+      geminiApiKey: 'test-gemini-key',
+      transactionNoteGenerator: async (kind) => {
+        generatedKinds.push(kind)
+        return 'Monthly contribution'
+      },
+    },
+  })
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'ai_note_success', password: 'a-secure-test-password' })
+    .expect(201)
+
+  const response = await agent
+    .post('/api/ai/transaction-note')
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .send({
+      kind: 'contribution',
+      amountMinor: 125000,
+      memberName: 'Private Member',
+      note: 'Private note',
+    })
+    .expect(200)
+
+  assert.deepEqual(response.body, { note: 'Monthly contribution' })
+  assert.deepEqual(generatedKinds, ['contribution'])
+})
+
+test('AI transaction note endpoint reports when Gemini is not configured', async () => {
+  const { app } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'ai_note_unconfigured', password: 'a-secure-test-password' })
+    .expect(201)
+
+  await agent
+    .post('/api/ai/transaction-note')
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .send({ kind: 'payout' })
+    .expect(503, { error: 'AI note suggestions are not configured.' })
+})
+
 test('Google OAuth creates an account and authenticates it with a JWT cookie', async () => {
   const oauthCalls = []
   const googleOAuthClient = {

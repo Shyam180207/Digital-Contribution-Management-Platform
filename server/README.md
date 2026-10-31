@@ -28,7 +28,13 @@ not foreign keys and do not enforce those checks by themselves.
    `GOOGLE_REDIRECT_URI`; the redirect URI must exactly match the authorized
    redirect URI configured with Google. For local development, use the example
    callback URI from `.env.example`.
-4. Install and start the API:
+4. To enable AI transaction-note suggestions, create a Gemini API key and set
+   `GEMINI_API_KEY` privately in the server environment. `GEMINI_MODEL` defaults
+   to `gemini-3.1-flash-lite`. The API sends only the transaction type to Gemini;
+   member names, amounts, notes, receipts, and account data are not included.
+   Without a key, the rest of the application remains available and the API
+   returns a clear configuration error when suggestions are requested.
+5. Install and start the API:
 
    ```sh
    npm install
@@ -66,6 +72,9 @@ running behind a hosting provider's web proxy.
   the authenticated account.
 - `GET /api/transactions` lists transactions across the authenticated
   account's groups.
+- `POST /api/ai/transaction-note` suggests a short transaction note using
+  Gemini. Requires authentication, a CSRF token, and `GEMINI_API_KEY`; accepts
+  `{"kind":"contribution"}` or `{"kind":"payout"}`.
 - `POST /api/groups` creates a group owned by the authenticated account.
 - `POST /api/groups/:groupId/members` adds a member only to an owned group.
 - `POST /api/groups/:groupId/transactions` records a contribution or payout
@@ -104,6 +113,8 @@ connections from the Render service's outbound IP addresses in Atlas; avoid
 opening the database to all IP addresses. After deployment, check
 `https://<service-name>.onrender.com/api/health`; it should return 200 with
 `{"status":"ok"}` when MongoDB is reachable.
+To enable AI transaction-note suggestions, also add `GEMINI_API_KEY` as a
+private environment variable in Render.
 
 This Blueprint deploys the API only, not the React client. If the client is
 hosted separately, set `CLIENT_ORIGIN` to its exact HTTPS origin in Render.
@@ -129,11 +140,11 @@ using named volumes.
 ## Bruno collection
 
 The [`bruno/`](../bruno/) folder contains a Bruno collection documenting all
-21 API endpoints, including authentication, Google OAuth, group and transaction
-operations, and receipt uploads. Open that folder as a collection in Bruno and
-select the **Local** environment. Set a unique local username and password, and
-set `receiptFile` to an absolute path to a PDF, JPEG, PNG, or WebP file before
-sending the receipt upload request.
+22 API endpoints, including authentication, Google OAuth, Gemini suggestions,
+group and transaction operations, and receipt uploads. Open that folder as a
+collection in Bruno and select the **Local** environment. Set a unique local
+username and password, and set `receiptFile` to an absolute path to a PDF,
+JPEG, PNG, or WebP file before sending the receipt upload request.
 
 Start with **Health**, then **Get session and CSRF token**, and register or log
 in. Bruno's cookie jar keeps the JWT and CSRF cookies; response scripts save the

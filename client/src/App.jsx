@@ -7,6 +7,7 @@ import {
   getDashboard,
   getSession,
   signOut,
+  suggestTransactionNote as suggestTransactionNoteRequest,
   uploadTransactionReceipt as uploadTransactionReceiptRequest,
   updateTransaction as updateTransactionRequest,
 } from './api.js'
@@ -160,6 +161,11 @@ function App() {
       setError(requestError.message)
     }
   }, [csrfToken, refreshDashboard])
+
+  const handleSuggestTransactionNote = useCallback(async (kind) => {
+    const result = await suggestTransactionNoteRequest(kind, csrfToken)
+    return result.note
+  }, [csrfToken])
 
   const handleDeleteTransaction = useCallback(async (activity) => {
     const confirmed = window.confirm(`Delete this ${activity.kind.toLowerCase()} for ${activity.name}?`)
@@ -316,6 +322,7 @@ function App() {
           onClose={() => setEditingActivity(null)}
           onDeleteReceipt={handleDeleteTransactionReceipt}
           onSave={handleUpdateTransaction}
+          onSuggestNote={handleSuggestTransactionNote}
           onUploadReceipt={handleUploadTransactionReceipt}
           transaction={editingActivity}
         />

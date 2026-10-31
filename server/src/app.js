@@ -10,6 +10,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDataStore } from './dataStore.js'
 import { HttpError } from './httpError.js'
+import { generateTransactionNote } from './gemini.js'
 import { hashPassword, verifyPassword } from './passwords.js'
 import {
   accessTokenLifetimeSeconds,
@@ -282,6 +283,10 @@ export function createApp({
   googleClientSecret = process.env.GOOGLE_CLIENT_SECRET,
   googleRedirectUri = process.env.GOOGLE_REDIRECT_URI,
   googleOAuthClient,
+  geminiApiKey = process.env.GEMINI_API_KEY,
+  geminiModel = process.env.GEMINI_MODEL,
+  geminiFetch = globalThis.fetch,
+  transactionNoteGenerator,
   receiptStorageDir = process.env.RECEIPT_STORAGE_DIR
     ?? fileURLToPath(new URL('../uploads/receipts/', import.meta.url)),
 } = {}) {
@@ -299,6 +304,11 @@ export function createApp({
       ? new OAuth2Client(googleClientId, googleClientSecret, googleRedirectUri)
       : null
   )
+  const suggestTransactionNote = transactionNoteGenerator ?? ((kind) => generateTransactionNote(kind, {
+    apiKey: geminiApiKey,
+    fetchImpl: geminiFetch,
+    model: geminiModel,
+  }))
 
   app.use((req, res, next) => {
     res.set('Cache-Control', 'no-store')
@@ -482,6 +492,17 @@ export function createApp({
   app.get('/api/groups/:groupId/transactions', requireAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.groupId)) throw new HttpError(400, 'Invalid group ID.')
     return res.json(await dataStore.listTransactions(req.userId, req.params.groupId))
+  })
+
+  app.post('/api/ai/transaction-note', requireCsrf, requireAuth, async (req, res) => {
+    const kind = req.body?.kind
+    if (kind !== 'contribution' && kind !== 'payout') {
+      throw new HttpError(400, 'Transaction kind must be contribution or payout.')
+    }
+    if (!geminiApiKey) throw new HttpError(503, 'AI note suggestions are not configured.')
+
+    const note = await suggestTransactionNote(kind)
+    return res.json({ note })
   })
 
   app.post('/api/groups', requireCsrf, requireAuth, async (req, res) => {

@@ -1144,6 +1144,23 @@
   margin-bottom: 12px;
 }
 
+.ai-note-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.ai-note-control input {
+  min-width: 0;
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.ai-note-button {
+  min-height: 36px;
+}
+
 .receipt-control {
   margin-bottom: 12px;
 }
