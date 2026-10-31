@@ -77,6 +77,10 @@ function createTestApp(overrides = {}) {
       calls.push(['createMember', userId, groupId, memberData])
       return { id: 'member-id', group: groupId, ...memberData }
     },
+    async createTransaction(userId, groupId, transactionData) {
+      calls.push(['createTransaction', userId, groupId, transactionData])
+      return { id: 'transaction-id', group: groupId, ...transactionData }
+    },
     ...overrides.dataStore,
   }
   const app = createApp({
@@ -95,12 +99,19 @@ async function getCsrfToken(agent) {
 
 test('protected dashboard reads require an authenticated session', async () => {
   const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const csrfToken = await getCsrfToken(agent)
 
-  await request(app).get('/api/dashboard').expect(401)
-  await request(app).get('/api/groups').expect(401)
-  await request(app).get('/api/groups/507f1f77bcf86cd799439011/members').expect(401)
-  await request(app).get('/api/transactions').expect(401)
-  await request(app).get('/api/groups/507f1f77bcf86cd799439011/transactions').expect(401)
+  await agent.get('/api/dashboard').expect(401)
+  await agent.get('/api/groups').expect(401)
+  await agent.get('/api/groups/507f1f77bcf86cd799439011/members').expect(401)
+  await agent.get('/api/transactions').expect(401)
+  await agent.get('/api/groups/507f1f77bcf86cd799439011/transactions').expect(401)
+  await agent
+    .post('/api/groups/507f1f77bcf86cd799439011/transactions')
+    .set('X-CSRF-Token', csrfToken)
+    .send({ memberId: '507f1f77bcf86cd799439012', kind: 'contribution', amountMinor: 1250 })
+    .expect(401)
   assert.equal(calls.length, 0)
 })
 
@@ -220,6 +231,97 @@ test('group creation validates CSRF and writes only with the session owner', asy
     registration.body.user.id,
     { name: 'Garden Circle', currency: 'INR' },
   ]])
+})
+
+test('transaction creation requires CSRF and uses authenticated group and member data', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'transaction_writer', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const memberId = new mongoose.Types.ObjectId().toString()
+  const body = {
+    memberId,
+    kind: 'contribution',
+    amountMinor: 1250,
+    note: ' October contribution ',
+    group: 'forged-group',
+    createdBy: 'forged-user',
+  }
+
+  await agent.post(`/api/groups/${groupId}/transactions`).send(body).expect(403)
+
+  const created = await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set('X-CSRF-Token', registration.body.csrfToken)
+    .send(body)
+    .expect(201)
+
+  assert.deepEqual(created.body.transaction, {
+    id: 'transaction-id',
+    group: groupId,
+    memberId,
+    kind: 'contribution',
+    amountMinor: 1250,
+    note: 'October contribution',
+  })
+  assert.deepEqual(calls, [[
+    'createTransaction',
+    registration.body.user.id,
+    groupId,
+    { memberId, kind: 'contribution', amountMinor: 1250, note: 'October contribution' },
+  ]])
+})
+
+test('transaction endpoint rejects invalid IDs, kinds, amounts, and notes before writing', async () => {
+  const { app, calls } = createTestApp()
+  const agent = request.agent(app)
+  const initialToken = await getCsrfToken(agent)
+  const registration = await agent
+    .post('/api/auth/register')
+    .set('X-CSRF-Token', initialToken)
+    .send({ username: 'invalid_transaction', password: 'a-secure-test-password' })
+    .expect(201)
+  const groupId = new mongoose.Types.ObjectId().toString()
+  const memberId = new mongoose.Types.ObjectId().toString()
+  const csrf = { 'X-CSRF-Token': registration.body.csrfToken }
+
+  await agent
+    .post('/api/groups/not-an-object-id/transactions')
+    .set(csrf)
+    .send({ memberId, kind: 'payout', amountMinor: 100 })
+    .expect(400)
+  await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set(csrf)
+    .send({ memberId: 'not-an-object-id', kind: 'payout', amountMinor: 100 })
+    .expect(400)
+  await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set(csrf)
+    .send({ memberId, kind: 'refund', amountMinor: 100 })
+    .expect(400)
+  await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set(csrf)
+    .send({ memberId, kind: 'payout', amountMinor: '100' })
+    .expect(400)
+  await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set(csrf)
+    .send({ memberId, kind: 'payout', amountMinor: 0 })
+    .expect(400)
+  await agent
+    .post(`/api/groups/${groupId}/transactions`)
+    .set(csrf)
+    .send({ memberId, kind: 'payout', amountMinor: 100, note: 'x'.repeat(201) })
+    .expect(400)
+
+  assert.deepEqual(calls, [])
 })
 
 test('invalid API inputs return client errors without writing', async () => {
