@@ -1,0 +1,23 @@
+meta {
+  name: Upload or replace receipt
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions/{{transactionId}}/receipt
+  body: multipartForm
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:multipart-form {
+  receipt: @file({{receiptFile}})
+}
+
+docs {
+  Uploads or replaces the transaction's receipt. Set receiptFile to an absolute path for a PDF, JPEG, PNG, or WebP file no larger than 5 MB. The multipart field name must be receipt. Returns 201 for a new receipt or 200 when replacing one.
+}

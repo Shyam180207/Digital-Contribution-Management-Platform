@@ -1,0 +1,31 @@
+meta {
+  name: Register
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/auth/register
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "username": "{{username}}",
+    "password": "{{password}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.csrfToken) bru.setEnvVar("csrfToken", body.csrfToken);
+}
+
+docs {
+  Creates a local account and signs it in. Set a unique username and a password of 10-128 characters in the Local environment. First send Get session and CSRF token.
+}

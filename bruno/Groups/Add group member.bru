@@ -1,0 +1,31 @@
+meta {
+  name: Add group member
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/groups/{{groupId}}/members
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "name": "Example member",
+    "phone": ""
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.member?.id) bru.setEnvVar("memberId", body.member.id);
+}
+
+docs {
+  Adds a member to the selected group. Name is required; phone is optional. The response stores the new member ID in the Local environment.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Download receipt
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions/{{transactionId}}/receipt
+  body: none
+  auth: none
+}
+
+docs {
+  Downloads the selected transaction's receipt as an attachment. Requires a signed-in session and returns 404 if no receipt is stored.
+}

@@ -1,0 +1,31 @@
+meta {
+  name: Login
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "username": "{{username}}",
+    "password": "{{password}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.csrfToken) bru.setEnvVar("csrfToken", body.csrfToken);
+}
+
+docs {
+  Signs in an existing local account using username and password. First send Get session and CSRF token. The JWT is returned in an HttpOnly cookie, not in the response body.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: List group transactions
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions
+  body: none
+  auth: none
+}
+
+docs {
+  Lists transactions in the selected group. The group must belong to the signed-in user.
+}

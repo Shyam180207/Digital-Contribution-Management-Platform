@@ -1,0 +1,19 @@
+meta {
+  name: Remove receipt
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions/{{transactionId}}/receipt
+  body: none
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+docs {
+  Removes the selected transaction's receipt without deleting the transaction. Returns 204.
+}

@@ -87,6 +87,23 @@ Receipt files are stored under `server/uploads/receipts` by default, which is
 excluded from version control. Set `RECEIPT_STORAGE_DIR` to use a persistent
 storage volume in deployment.
 
+## Bruno collection
+
+The [`bruno/`](../bruno/) folder contains a Bruno collection documenting all
+21 API endpoints, including authentication, Google OAuth, group and transaction
+operations, and receipt uploads. Open that folder as a collection in Bruno and
+select the **Local** environment. Set a unique local username and password, and
+set `receiptFile` to an absolute path to a PDF, JPEG, PNG, or WebP file before
+sending the receipt upload request.
+
+Start with **Health**, then **Get session and CSRF token**, and register or log
+in. Bruno's cookie jar keeps the JWT and CSRF cookies; response scripts save the
+CSRF token and the IDs returned by group, member, and transaction creation in
+the Local environment. These scripts update `Local.bru`; do not commit local
+credentials or values written while testing. Google OAuth must be completed in
+a browser; its callback template is included for route reference and should not
+be sent manually.
+
 ## Validate
 
 ```sh

@@ -1,0 +1,15 @@
+meta {
+  name: Start Google sign-in
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/auth/google
+  body: none
+  auth: none
+}
+
+docs {
+  Starts Google OAuth and redirects to Google. Complete this flow in a browser; it requires Google OAuth configuration and is not a standalone API login request.
+}

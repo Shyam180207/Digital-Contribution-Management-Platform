@@ -1,0 +1,28 @@
+meta {
+  name: Update transaction
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/groups/{{groupId}}/transactions/{{transactionId}}
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "memberId": "{{memberId}}",
+    "kind": "contribution",
+    "amountMinor": 1500,
+    "note": "Updated contribution"
+  }
+}
+
+docs {
+  Replaces a transaction's member, kind, amount, and note. Use a member in the same group; amountMinor is a positive integer in minor currency units.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: List members
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/members
+  body: none
+  auth: none
+}
+
+docs {
+  Lists members belonging to the signed-in user's groups.
+}

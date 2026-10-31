@@ -1,0 +1,31 @@
+meta {
+  name: Create group
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/groups
+  body: json
+  auth: none
+}
+
+headers {
+  X-CSRF-Token: {{csrfToken}}
+}
+
+body:json {
+  {
+    "name": "Bruno example group",
+    "currency": "USD"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.group?.id) bru.setEnvVar("groupId", body.group.id);
+}
+
+docs {
+  Creates a group for the signed-in user. Currency is an optional three-letter code and defaults to USD. The response stores the new group ID in the Local environment.
+}
