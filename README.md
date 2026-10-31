@@ -11,7 +11,7 @@ The React client uses the Express API, which stores accounts, groups, members,
 and transactions in MongoDB. Configure and start MongoDB and the API using
 [server/README.md](./server/README.md), then start the client using
 [client/README.md](./client/README.md). The API requires `MONGODB_URI` and a
-private `SESSION_SECRET`; copy `server/.env.example` to `server/.env` to
+private `JWT_SECRET`; copy `server/.env.example` to `server/.env` to
 configure them locally.
 
 ## Capstone plan

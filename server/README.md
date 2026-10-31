@@ -44,8 +44,9 @@ not foreign keys and do not enforce those checks by themselves.
    ```
 
 Vite proxies `/api` requests to `http://127.0.0.1:3001`. The API listens on
-loopback and exits with a configuration or database connection error instead
-of falling back to in-memory or demo data.
+loopback by default and exits with a configuration or database connection error
+instead of falling back to in-memory or demo data. Set `HOST=0.0.0.0` when
+running behind a hosting provider's web proxy.
 
 ## API endpoints
 
@@ -86,6 +87,35 @@ the current token and retrieve their user profile.
 Receipt files are stored under `server/uploads/receipts` by default, which is
 excluded from version control. Set `RECEIPT_STORAGE_DIR` to use a persistent
 storage volume in deployment.
+
+## Deploy the backend to Render
+
+The repository-root [`render.yaml`](../render.yaml) defines a free Node web
+service rooted at `server/`. In Render, sign in with your account, choose
+**New > Blueprint**, connect this repository and deploy the Blueprint. It runs
+`npm ci`, starts the API with `npm start`, and checks `/api/health`. The
+Blueprint binds the API to `0.0.0.0`, uses Render's `PORT`, enables production
+cookie settings, and generates a private `JWT_SECRET`.
+
+Before creating the service, prepare a MongoDB Atlas database and enter its
+connection URI as `MONGODB_URI` in Render's private Blueprint prompt or service
+environment settings. Do not use the local `mongodb://127.0.0.1` example. Allow
+connections from the Render service's outbound IP addresses in Atlas; avoid
+opening the database to all IP addresses. After deployment, check
+`https://<service-name>.onrender.com/api/health`; it should return 200 with
+`{"status":"ok"}` when MongoDB is reachable.
+
+This Blueprint deploys the API only, not the React client. If the client is
+hosted separately, set `CLIENT_ORIGIN` to its exact HTTPS origin in Render.
+Google sign-in is optional; to enable it, set `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in Render, and register the
+exact callback URL `https://<service-name>.onrender.com/api/auth/google/callback`
+with Google.
+
+The selected free plan uses an ephemeral filesystem. Receipt uploads are
+available, but stored files may be lost when the service restarts or redeploys.
+The MongoDB records remain persistent; use a paid persistent disk or external
+object storage if receipt files must survive service replacement.
 
 ## Bruno collection
 
